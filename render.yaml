@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: geotrader
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    disk:
+      name: db
+      mountPath: /app/backend
+      sizeGB: 1
