@@ -7,16 +7,16 @@ interface Props {
 }
 
 const SEVERITY_STYLES: Record<string, string> = {
-  CRITICAL: "border-red-500/40 bg-red-500/5",
-  HIGH:     "border-orange-500/40 bg-orange-500/5",
-  MEDIUM:   "border-yellow-500/30 bg-yellow-500/5",
+  CRITICAL: "border-red-500 bg-red-500/10 shadow-[0_0_20px_rgba(255,10,60,0.2)]",
+  HIGH:     "border-orange-500/70 bg-orange-500/8 shadow-[0_0_14px_rgba(255,100,0,0.15)]",
+  MEDIUM:   "border-yellow-500/50 bg-yellow-500/5",
   LOW:      "border-terminal-border bg-terminal-card",
 };
 
 const SEVERITY_BADGE: Record<string, string> = {
-  CRITICAL: "bg-red-500/20 text-red-400 border-red-500/40",
-  HIGH:     "bg-orange-500/20 text-orange-400 border-orange-500/40",
-  MEDIUM:   "bg-yellow-500/20 text-yellow-400 border-yellow-500/40",
+  CRITICAL: "bg-red-500/30 text-red-400 border-red-500 shadow-[0_0_8px_rgba(255,10,60,0.5)] font-bold tracking-widest",
+  HIGH:     "bg-orange-500/20 text-orange-400 border-orange-500/70",
+  MEDIUM:   "bg-yellow-500/20 text-yellow-300 border-yellow-500/50",
   LOW:      "bg-blue-500/20 text-blue-400 border-blue-500/40",
 };
 
@@ -29,17 +29,13 @@ export default function SignalCard({ item }: Props) {
 
   return (
     <article
-      className={`rounded-xl border p-4 space-y-3 animate-slide-up transition-all ${
+      className={`rounded-lg border-2 p-4 space-y-3 animate-slide-up transition-all hover:brightness-110 ${
         SEVERITY_STYLES[item.severity] ?? SEVERITY_STYLES.LOW
       }`}
     >
       {/* Top row: badges + meta */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span
-          className={`border rounded px-2 py-0.5 font-semibold ${
-            SEVERITY_BADGE[item.severity] ?? ""
-          }`}
-        >
+        <span className={`border rounded px-2 py-0.5 text-xs uppercase tracking-widest ${SEVERITY_BADGE[item.severity] ?? ""}`}>
           {item.severity}
         </span>
         <EventBadge label={item.event_label} />
@@ -50,7 +46,7 @@ export default function SignalCard({ item }: Props) {
 
       {/* Headline */}
       <div>
-        <h3 className="text-terminal-text font-medium text-sm leading-snug">
+        <h3 className="text-terminal-text font-semibold text-sm leading-snug tracking-wide">
           {item.news_title}
         </h3>
         {item.news_summary && (
@@ -63,33 +59,27 @@ export default function SignalCard({ item }: Props) {
       {/* Entities + sentiment */}
       <div className="flex flex-wrap items-center gap-2">
         {item.entities.map((e) => (
-          <span
-            key={e}
-            className="text-xs border border-terminal-border text-terminal-dim px-1.5 py-0.5 rounded"
-          >
+          <span key={e} className="text-xs border border-terminal-accent/30 text-terminal-accent/70 px-1.5 py-0.5 rounded bg-terminal-accent/5">
             {e}
           </span>
         ))}
         <span
-          className={`ml-auto text-xs font-mono ${
-            sentiment >= 0.1
-              ? "text-terminal-buy"
-              : sentiment <= -0.1
-              ? "text-terminal-sell"
-              : "text-terminal-dim"
+          className={`ml-auto text-xs font-mono font-bold ${
+            sentiment >= 0.1 ? "text-terminal-buy glow-buy"
+            : sentiment <= -0.1 ? "text-terminal-sell glow-sell"
+            : "text-terminal-dim"
           }`}
         >
-          {sentiment >= 0.1 ? "+" : ""}
-          {sentiment.toFixed(2)} SENT
+          {sentiment >= 0.1 ? "▲" : sentiment <= -0.1 ? "▼" : "—"} {Math.abs(sentiment).toFixed(2)}
         </span>
       </div>
 
       {/* Divider */}
-      <div className="border-t border-terminal-border/50" />
+      <div className="border-t border-terminal-accent/10" />
 
       {/* Market signals */}
       <div className="space-y-2">
-        <p className="text-terminal-dim text-xs tracking-widest">MARKET SIGNALS</p>
+        <p className="text-terminal-accent/60 text-xs tracking-widest font-bold">◈ MARKET SIGNALS</p>
         <div className="space-y-1.5">
           {topSignals.map((ms) => (
             <SignalRow key={ms.asset} signal={ms} showReason={expanded} />
@@ -104,15 +94,7 @@ export default function SignalCard({ item }: Props) {
             onClick={() => setExpanded((e) => !e)}
             className="flex items-center gap-1 text-xs text-terminal-dim hover:text-terminal-accent transition-colors"
           >
-            {expanded ? (
-              <>
-                <ChevronUp size={12} /> Show less
-              </>
-            ) : (
-              <>
-                <ChevronDown size={12} /> +{item.market_signals.length - 4} more signals
-              </>
-            )}
+            {expanded ? <><ChevronUp size={12} /> Show less</> : <><ChevronDown size={12} /> +{item.market_signals.length - 4} more</>}
           </button>
         )}
         {item.news_url && (
@@ -132,42 +114,27 @@ export default function SignalCard({ item }: Props) {
 
 function SignalRow({ signal, showReason }: { signal: MarketSignal; showReason: boolean }) {
   const isBuy = signal.signal === "BUY";
-  const barColor = isBuy ? "bg-terminal-buy" : "bg-terminal-sell";
-  const textColor = isBuy ? "text-terminal-buy" : "text-terminal-sell";
 
   return (
     <div className="space-y-0.5">
-      <div className="flex items-center gap-2">
-        {/* Direction icon */}
-        <span className={`shrink-0 ${textColor}`}>
+      <div className={`flex items-center gap-2 rounded px-2 py-1 ${isBuy ? "bg-terminal-buy/5 border border-terminal-buy/20" : "bg-terminal-sell/5 border border-terminal-sell/20"}`}>
+        <span className={isBuy ? "text-terminal-buy glow-buy" : "text-terminal-sell glow-sell"}>
           {isBuy ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
         </span>
-
-        {/* Asset name */}
-        <span className="text-terminal-text text-xs w-28 truncate">{signal.asset_label}</span>
-
-        {/* Confidence bar */}
+        <span className="text-terminal-text text-xs w-28 truncate font-medium">{signal.asset_label}</span>
         <div className="flex-1 h-1.5 bg-terminal-muted rounded-full overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all ${barColor}`}
+            className={`h-full rounded-full transition-all ${isBuy ? "bg-terminal-buy shadow-buy-glow" : "bg-terminal-sell shadow-sell-glow"}`}
             style={{ width: `${signal.confidence}%` }}
           />
         </div>
-
-        {/* Signal + confidence */}
-        <span className={`text-xs font-mono font-semibold w-20 text-right ${textColor}`}>
+        <span className={`text-xs font-mono font-bold w-20 text-right ${isBuy ? "text-terminal-buy glow-buy" : "text-terminal-sell glow-sell"}`}>
           {signal.signal} {signal.confidence}%
         </span>
-
-        {/* Category tag */}
-        <span className="hidden sm:inline text-xs text-terminal-dim w-20 text-right">
-          {signal.category}
-        </span>
+        <span className="hidden sm:inline text-xs text-terminal-dim w-20 text-right uppercase">{signal.category}</span>
       </div>
       {showReason && (
-        <p className="text-terminal-dim text-xs pl-5 italic leading-relaxed">
-          {signal.reasoning}
-        </p>
+        <p className="text-terminal-dim text-xs pl-5 italic leading-relaxed">{signal.reasoning}</p>
       )}
     </div>
   );
@@ -175,7 +142,7 @@ function SignalRow({ signal, showReason }: { signal: MarketSignal; showReason: b
 
 function EventBadge({ label }: { label: string }) {
   return (
-    <span className="bg-terminal-accent/10 text-terminal-accent border border-terminal-accent/20 rounded px-2 py-0.5 text-xs">
+    <span className="bg-terminal-accent/15 text-terminal-accent border border-terminal-accent/40 rounded px-2 py-0.5 text-xs tracking-wide glow-accent">
       {label}
     </span>
   );

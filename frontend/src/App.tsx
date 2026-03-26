@@ -7,6 +7,7 @@ import SignalCard from "./components/SignalCard";
 import StatsBar from "./components/StatsBar";
 import { useAuth } from "./context/AuthContext";
 import AuthPage from "./pages/AuthPage";
+import StocksPage from "./pages/StocksPage";
 import { useSignals } from "./hooks/useSignals";
 import type { Filters } from "./types";
 
@@ -37,6 +38,7 @@ export default function App() {
 function Dashboard({ onLogout, userName }: { onLogout: () => void; userName: string }) {
   const [filters, setFilters]       = useState<Filters>(DEFAULT_FILTERS);
   const [showRegister, setShowRegister] = useState(false);
+  const [activePage, setActivePage] = useState<"news" | "stocks">("news");
 
   const { signals, stats, loading, newCount, refresh } = useSignals(filters);
 
@@ -60,31 +62,61 @@ function Dashboard({ onLogout, userName }: { onLogout: () => void; userName: str
       <NewsTicker signals={signals} />
       <StatsBar stats={stats} />
 
-      <div className="max-w-screen-2xl mx-auto flex">
-        <FilterPanel filters={filters} onChange={setFilters} />
-
-        {/* Main content */}
-        <main className="flex-1 p-4 min-h-screen">
-          {loading && signals.length === 0 ? (
-            <LoadingState />
-          ) : signals.length === 0 ? (
-            <EmptyState onRefresh={refresh} />
-          ) : (
-            <>
-              <p className="text-terminal-dim text-xs mb-4">
-                Showing {signals.length} signal{signals.length !== 1 ? "s" : ""}
-                {filters.event_type && ` · ${filters.event_type.replace(/_/g, " ")}`}
-                {filters.severity && ` · ${filters.severity}`}
-              </p>
-              <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-4">
-                {signals.map((s) => (
-                  <SignalCard key={s.id} item={s} />
-                ))}
-              </div>
-            </>
-          )}
-        </main>
+      {/* Page tabs */}
+      <div className="border-b border-terminal-border bg-terminal-card/50">
+        <div className="max-w-screen-2xl mx-auto px-4 flex gap-1">
+          <button
+            onClick={() => setActivePage("news")}
+            className={`px-6 py-2.5 text-xs tracking-widest font-bold transition-all border-b-2 ${
+              activePage === "news"
+                ? "text-terminal-accent border-terminal-accent glow-accent"
+                : "text-terminal-dim border-transparent hover:text-terminal-text"
+            }`}
+          >
+            ◈ SIGNALS FEED
+          </button>
+          <button
+            onClick={() => setActivePage("stocks")}
+            className={`px-6 py-2.5 text-xs tracking-widest font-bold transition-all border-b-2 ${
+              activePage === "stocks"
+                ? "text-terminal-buy border-terminal-buy glow-buy"
+                : "text-terminal-dim border-transparent hover:text-terminal-text"
+            }`}
+          >
+            ▲ TRADE RECOMMENDATIONS
+          </button>
+        </div>
       </div>
+
+      {activePage === "stocks" ? (
+        <div className="max-w-screen-2xl mx-auto">
+          <StocksPage signals={signals} />
+        </div>
+      ) : (
+        <div className="max-w-screen-2xl mx-auto flex">
+          <FilterPanel filters={filters} onChange={setFilters} />
+          <main className="flex-1 p-4 min-h-screen">
+            {loading && signals.length === 0 ? (
+              <LoadingState />
+            ) : signals.length === 0 ? (
+              <EmptyState onRefresh={refresh} />
+            ) : (
+              <>
+                <p className="text-terminal-dim text-xs mb-4">
+                  Showing {signals.length} signal{signals.length !== 1 ? "s" : ""}
+                  {filters.event_type && ` · ${filters.event_type.replace(/_/g, " ")}`}
+                  {filters.severity && ` · ${filters.severity}`}
+                </p>
+                <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-4">
+                  {signals.map((s) => (
+                    <SignalCard key={s.id} item={s} />
+                  ))}
+                </div>
+              </>
+            )}
+          </main>
+        </div>
+      )}
 
       {showRegister && <RegisterModal onClose={() => setShowRegister(false)} />}
     </div>

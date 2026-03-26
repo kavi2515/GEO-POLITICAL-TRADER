@@ -5,31 +5,32 @@ export default {
     extend: {
       colors: {
         terminal: {
-          bg:      "#080d14",
-          card:    "#0d1421",
-          border:  "#1a2535",
-          muted:   "#1e2d40",
-          accent:  "#00d4ff",
-          buy:     "#00e676",
-          sell:    "#ff3d5a",
-          hold:    "#ffd54f",
-          text:    "#c8d8e8",
-          dim:     "#64748b",
+          bg:      "#020408",
+          card:    "#060c14",
+          border:  "#0f1f33",
+          muted:   "#0a1628",
+          accent:  "#00f5ff",
+          buy:     "#00ff88",
+          sell:    "#ff0a3c",
+          hold:    "#ffcc00",
+          text:    "#e2f0ff",
+          dim:     "#4a6080",
         },
       },
       fontFamily: {
         mono: ["JetBrains Mono", "Fira Code", "Consolas", "monospace"],
       },
       animation: {
-        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
+        "pulse-glow": "pulse-glow 1.5s ease-in-out infinite",
         "ticker":     "ticker 40s linear infinite",
         "fade-in":    "fade-in 0.4s ease-out",
         "slide-up":   "slide-up 0.3s ease-out",
+        "flicker":    "flicker 3s step-end infinite",
       },
       keyframes: {
         "pulse-glow": {
-          "0%, 100%": { opacity: "1" },
-          "50%":       { opacity: "0.5" },
+          "0%, 100%": { opacity: "1", filter: "brightness(1.2)" },
+          "50%":       { opacity: "0.6", filter: "brightness(0.8)" },
         },
         "ticker": {
           "0%":   { transform: "translateX(100%)" },
@@ -43,6 +44,15 @@ export default {
           from: { opacity: "0", transform: "translateY(12px)" },
           to:   { opacity: "1", transform: "translateY(0)" },
         },
+        "flicker": {
+          "0%, 95%, 100%": { opacity: "1" },
+          "96%":            { opacity: "0.4" },
+        },
+      },
+      boxShadow: {
+        "buy-glow":  "0 0 12px rgba(0, 255, 136, 0.3)",
+        "sell-glow": "0 0 12px rgba(255, 10, 60, 0.3)",
+        "accent-glow": "0 0 16px rgba(0, 245, 255, 0.2)",
       },
     },
   },
