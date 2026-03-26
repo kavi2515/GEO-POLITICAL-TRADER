@@ -10,6 +10,11 @@ export function useSignals(filters: Filters) {
   const [newCount, setNewCount] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
 
+  const getHeaders = () => {
+    const token = localStorage.getItem("token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const fetchSignals = useCallback(async () => {
     const params = new URLSearchParams();
     if (filters.event_type)     params.set("event_type", filters.event_type);
@@ -21,8 +26,8 @@ export function useSignals(filters: Filters) {
 
     try {
       const [sigRes, statsRes] = await Promise.all([
-        fetch(`${API}/api/signals?${params}`),
-        fetch(`${API}/api/stats?hours=${filters.hours}`),
+        fetch(`${API}/api/signals?${params}`, { headers: getHeaders() }),
+        fetch(`${API}/api/stats?hours=${filters.hours}`, { headers: getHeaders() }),
       ]);
       if (sigRes.ok)   setSignals(await sigRes.json());
       if (statsRes.ok) setStats(await statsRes.json());
@@ -61,7 +66,7 @@ export function useSignals(filters: Filters) {
   const refresh = useCallback(async () => {
     setLoading(true);
     setNewCount(0);
-    await fetch("/api/refresh", { method: "POST" });
+    await fetch("/api/refresh", { method: "POST", headers: getHeaders() });
     await fetchSignals();
   }, [fetchSignals]);
 

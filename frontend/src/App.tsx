@@ -5,6 +5,8 @@ import NewsTicker from "./components/NewsTicker";
 import RegisterModal from "./components/RegisterModal";
 import SignalCard from "./components/SignalCard";
 import StatsBar from "./components/StatsBar";
+import { useAuth } from "./context/AuthContext";
+import AuthPage from "./pages/AuthPage";
 import { useSignals } from "./hooks/useSignals";
 import type { Filters } from "./types";
 
@@ -17,6 +19,22 @@ const DEFAULT_FILTERS: Filters = {
 };
 
 export default function App() {
+  const { user, loading: authLoading, logout } = useAuth();
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-terminal-bg text-terminal-text font-mono flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-terminal-accent/30 border-t-terminal-accent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) return <AuthPage />;
+
+  return <Dashboard onLogout={logout} userName={user.name} />;
+}
+
+function Dashboard({ onLogout, userName }: { onLogout: () => void; userName: string }) {
   const [filters, setFilters]       = useState<Filters>(DEFAULT_FILTERS);
   const [showRegister, setShowRegister] = useState(false);
 
@@ -24,12 +42,20 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-terminal-bg text-terminal-text font-mono">
-      <Header
-        newCount={newCount}
-        loading={loading}
-        onRefresh={refresh}
-        onRegister={() => setShowRegister(true)}
-      />
+      <div className="flex items-center justify-between bg-terminal-bg border-b border-terminal-accent/20 px-4 py-1">
+        <Header
+          newCount={newCount}
+          loading={loading}
+          onRefresh={refresh}
+          onRegister={() => setShowRegister(true)}
+        />
+        <div className="flex items-center gap-3 text-xs text-terminal-dim shrink-0">
+          <span>{userName}</span>
+          <button onClick={onLogout} className="text-red-400 hover:text-red-300 border border-red-400/30 px-2 py-1 rounded transition-colors">
+            LOGOUT
+          </button>
+        </div>
+      </div>
 
       <NewsTicker signals={signals} />
       <StatsBar stats={stats} />

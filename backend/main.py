@@ -17,9 +17,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import (
-    NewsItemDB, SignalDB, SubscriberDB,
+    NewsItemDB, SignalDB, SubscriberDB, UserDB,
     create_tables, get_db,
 )
+from auth import create_access_token, get_current_user, hash_password, verify_password
 from ml_engine import SignalEngine
 from news_fetcher import fetch_all_feeds
 from nlp_engine import GeopoliticalNLP
@@ -193,6 +194,23 @@ class SubscribeRequest(BaseModel):
     filters: Optional[dict] = {}
 
 
+class RegisterRequest(BaseModel):
+    email: str
+    name: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+
+
 class StatsResponse(BaseModel):
     total_signals: int
     buy_signals: int
@@ -206,6 +224,35 @@ class StatsResponse(BaseModel):
 # Routes
 # ---------------------------------------------------------------------------
 
+@app.post("/api/auth/register", response_model=UserResponse, status_code=201)
+def register(req: RegisterRequest, db: Session = Depends(get_db)):
+    email = req.email.strip().lower()
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        raise HTTPException(status_code=422, detail="Invalid email address")
+    if db.query(UserDB).filter_by(email=email).first():
+        raise HTTPException(status_code=409, detail="Email already registered")
+    user = UserDB(email=email, name=req.name.strip(), hashed_password=hash_password(req.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return UserResponse(id=user.id, email=user.email, name=user.name)
+
+
+@app.post("/api/auth/login")
+def login(req: LoginRequest, db: Session = Depends(get_db)):
+    email = req.email.strip().lower()
+    user = db.query(UserDB).filter_by(email=email).first()
+    if not user or not verify_password(req.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = create_access_token(user.id)
+    return {"access_token": token, "token_type": "bearer", "user": {"id": user.id, "email": user.email, "name": user.name}}
+
+
+@app.get("/api/auth/me", response_model=UserResponse)
+def me(current_user: UserDB = Depends(get_current_user)):
+    return UserResponse(id=current_user.id, email=current_user.email, name=current_user.name)
+
+
 @app.get("/api/signals", response_model=list[SignalResponse])
 def get_signals(
     event_type: Optional[str] = None,
@@ -216,6 +263,7 @@ def get_signals(
     hours: int = 24,
     limit: int = 50,
     db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user),
 ):
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     query = db.query(SignalDB).filter(SignalDB.created_at >= cutoff)
@@ -264,7 +312,7 @@ def get_signals(
 
 
 @app.get("/api/stats", response_model=StatsResponse)
-def get_stats(hours: int = 24, db: Session = Depends(get_db)):
+def get_stats(hours: int = 24, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     signals = db.query(SignalDB).filter(SignalDB.created_at >= cutoff).all()
 
