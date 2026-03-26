@@ -10,7 +10,7 @@ export function useSignals(filters: Filters) {
   const [newCount, setNewCount] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
 
-  const getHeaders = () => {
+  const getHeaders = (): Record<string, string> => {
     const token = localStorage.getItem("token");
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
