@@ -6,7 +6,9 @@ import RegisterModal from "./components/RegisterModal";
 import SignalCard from "./components/SignalCard";
 import StatsBar from "./components/StatsBar";
 import { useAuth } from "./context/AuthContext";
+import AdminPage from "./pages/AdminPage";
 import AuthPage from "./pages/AuthPage";
+import PortfolioPage from "./pages/PortfolioPage";
 import StocksPage from "./pages/StocksPage";
 import { useSignals } from "./hooks/useSignals";
 import type { Filters } from "./types";
@@ -32,13 +34,13 @@ export default function App() {
 
   if (!user) return <AuthPage />;
 
-  return <Dashboard onLogout={logout} userName={user.name} />;
+  return <Dashboard onLogout={logout} user={user} />;
 }
 
-function Dashboard({ onLogout, userName }: { onLogout: () => void; userName: string }) {
+function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: string; is_admin: boolean } }) {
   const [filters, setFilters]       = useState<Filters>(DEFAULT_FILTERS);
   const [showRegister, setShowRegister] = useState(false);
-  const [activePage, setActivePage] = useState<"news" | "stocks">("news");
+  const [activePage, setActivePage] = useState<"news" | "stocks" | "portfolio" | "admin">("news");
 
   const { signals, stats, loading, newCount, refresh } = useSignals(filters);
 
@@ -52,7 +54,7 @@ function Dashboard({ onLogout, userName }: { onLogout: () => void; userName: str
           onRegister={() => setShowRegister(true)}
         />
         <div className="flex items-center gap-3 text-xs text-terminal-dim shrink-0">
-          <span>{userName}</span>
+          <span>{user.name}</span>
           <button onClick={onLogout} className="text-red-400 hover:text-red-300 border border-red-400/30 px-2 py-1 rounded transition-colors">
             LOGOUT
           </button>
@@ -85,10 +87,40 @@ function Dashboard({ onLogout, userName }: { onLogout: () => void; userName: str
           >
             ▲ TRADE RECOMMENDATIONS
           </button>
+          <button
+            onClick={() => setActivePage("portfolio")}
+            className={`px-6 py-2.5 text-xs tracking-widest font-bold transition-all border-b-2 ${
+              activePage === "portfolio"
+                ? "text-terminal-accent border-terminal-accent glow-accent"
+                : "text-terminal-dim border-transparent hover:text-terminal-text"
+            }`}
+          >
+            ◉ PORTFOLIO
+          </button>
+          {user.is_admin && (
+            <button
+              onClick={() => setActivePage("admin")}
+              className={`px-6 py-2.5 text-xs tracking-widest font-bold transition-all border-b-2 ${
+                activePage === "admin"
+                  ? "text-terminal-accent border-terminal-accent glow-accent"
+                  : "text-terminal-dim border-transparent hover:text-terminal-text"
+              }`}
+            >
+              ⬡ ADMIN
+            </button>
+          )}
         </div>
       </div>
 
-      {activePage === "stocks" ? (
+      {activePage === "admin" ? (
+        <div className="max-w-screen-2xl mx-auto">
+          <AdminPage />
+        </div>
+      ) : activePage === "portfolio" ? (
+        <div className="max-w-screen-2xl mx-auto">
+          <PortfolioPage />
+        </div>
+      ) : activePage === "stocks" ? (
         <div className="max-w-screen-2xl mx-auto">
           <StocksPage signals={signals} />
         </div>

@@ -43,6 +43,7 @@ class SignalDB(Base):
     severity = Column(String)        # LOW / MEDIUM / HIGH / CRITICAL
     severity_score = Column(Float)   # 0.0 to 1.0
     market_signals = Column(JSON)    # list of {asset, signal, confidence, reasoning}
+    emailed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -57,6 +58,24 @@ class SubscriberDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class PortfolioDB(Base):
+    __tablename__ = "portfolio"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=False)
+    signal_id = Column(String, nullable=False)
+    news_title = Column(String, nullable=False)
+    asset = Column(String, nullable=False)
+    asset_label = Column(String, nullable=False)
+    category = Column(String)
+    direction = Column(String, nullable=False)  # BUY or SELL
+    confidence = Column(Integer)
+    entry_price = Column(Float, nullable=True)
+    notes = Column(String, nullable=True)
+    status = Column(String, default="OPEN")  # OPEN or CLOSED
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class UserDB(Base):
     __tablename__ = "users"
 
@@ -65,6 +84,7 @@ class UserDB(Base):
     name = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

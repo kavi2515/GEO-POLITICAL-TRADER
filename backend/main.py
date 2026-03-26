@@ -6,8 +6,11 @@ import json
 import logging
 import os
 import re
+import smtplib
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -17,10 +20,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import (
-    NewsItemDB, SignalDB, SubscriberDB, UserDB,
+    NewsItemDB, PortfolioDB, SignalDB, SubscriberDB, UserDB,
     create_tables, get_db,
 )
-from auth import create_access_token, get_current_user, hash_password, verify_password
+from auth import create_access_token, get_admin_user, get_current_user, hash_password, verify_password
 from ml_engine import SignalEngine
 from news_fetcher import fetch_all_feeds
 from nlp_engine import GeopoliticalNLP
@@ -121,7 +124,65 @@ async def process_news(db: Session) -> int:
         await manager.broadcast({"type": "new_signals", "count": new_signals})
         logger.info("Added %d new signals", new_signals)
 
+    # Send email alerts for critical signals
+    critical_unsent = db.query(SignalDB).filter(
+        SignalDB.severity == "CRITICAL",
+        SignalDB.emailed == False
+    ).all()
+    if critical_unsent:
+        subscribers = db.query(SubscriberDB).filter_by(active=True).all()
+        for sig in critical_unsent:
+            send_email_alert(sig, subscribers)
+            sig.emailed = True
+        db.commit()
+
     return new_signals
+
+
+def send_email_alert(signal: SignalDB, subscribers: list):
+    smtp_host = os.environ.get("SMTP_HOST", "")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_pass = os.environ.get("SMTP_PASS", "")
+    smtp_from = os.environ.get("SMTP_FROM", smtp_user)
+
+    if not smtp_host or not smtp_user or not smtp_pass:
+        return
+
+    subject = f"⚠️ CRITICAL ALERT: {signal.event_label} — {signal.news_title[:60]}"
+
+    for sub in subscribers:
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = smtp_from
+            msg["To"] = sub.email
+
+            body = f"""
+GEOPOLITICAL TRADER — CRITICAL ALERT
+=====================================
+Event: {signal.event_label}
+Severity: {signal.severity}
+Source: {signal.source}
+
+{signal.news_title}
+
+{signal.news_summary or ""}
+
+Market Signals:
+"""
+            for ms in (signal.market_signals or []):
+                body += f"  {ms.get('signal')} {ms.get('asset_label')} — {ms.get('confidence')}% confidence\n"
+
+            body += f"\nRead more: {signal.news_url or 'https://geotrader.io'}\n\n— GeoTrader Intelligence Platform"
+            msg.attach(MIMEText(body, "plain"))
+
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_pass)
+                server.send_message(msg)
+        except Exception as e:
+            logger.warning("Failed to send email to %s: %s", sub.email, e)
 
 
 async def background_loop():
@@ -209,6 +270,43 @@ class UserResponse(BaseModel):
     id: str
     email: str
     name: str
+    is_admin: bool = False
+
+
+class PortfolioAddRequest(BaseModel):
+    signal_id: str
+    news_title: str
+    asset: str
+    asset_label: str
+    category: str
+    direction: str
+    confidence: int
+    entry_price: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class PortfolioResponse(BaseModel):
+    id: str
+    signal_id: str
+    news_title: str
+    asset: str
+    asset_label: str
+    category: str
+    direction: str
+    confidence: int
+    entry_price: Optional[float]
+    notes: Optional[str]
+    status: str
+    created_at: datetime
+
+
+class AdminUserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+    is_admin: bool
+    is_active: bool
+    created_at: datetime
 
 
 class StatsResponse(BaseModel):
@@ -235,7 +333,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
-    return UserResponse(id=user.id, email=user.email, name=user.name)
+    return UserResponse(id=user.id, email=user.email, name=user.name, is_admin=user.is_admin)
 
 
 @app.post("/api/auth/login")
@@ -245,12 +343,88 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     if not user or not verify_password(req.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token(user.id)
-    return {"access_token": token, "token_type": "bearer", "user": {"id": user.id, "email": user.email, "name": user.name}}
+    return {"access_token": token, "token_type": "bearer", "user": {"id": user.id, "email": user.email, "name": user.name, "is_admin": user.is_admin}}
 
 
 @app.get("/api/auth/me", response_model=UserResponse)
 def me(current_user: UserDB = Depends(get_current_user)):
-    return UserResponse(id=current_user.id, email=current_user.email, name=current_user.name)
+    return UserResponse(id=current_user.id, email=current_user.email, name=current_user.name, is_admin=current_user.is_admin)
+
+
+@app.get("/api/admin/users", response_model=list[AdminUserResponse])
+def admin_list_users(db: Session = Depends(get_db), admin: UserDB = Depends(get_admin_user)):
+    users = db.query(UserDB).order_by(UserDB.created_at.desc()).all()
+    return [AdminUserResponse(id=u.id, email=u.email, name=u.name, is_admin=u.is_admin, is_active=u.is_active, created_at=u.created_at) for u in users]
+
+
+@app.patch("/api/admin/users/{user_id}/toggle")
+def admin_toggle_user(user_id: str, db: Session = Depends(get_db), admin: UserDB = Depends(get_admin_user)):
+    user = db.query(UserDB).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == admin.id:
+        raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
+    user.is_active = not user.is_active
+    db.commit()
+    return {"id": user.id, "is_active": user.is_active}
+
+
+@app.patch("/api/admin/users/{user_id}/make-admin")
+def admin_make_admin(user_id: str, db: Session = Depends(get_db), admin: UserDB = Depends(get_admin_user)):
+    user = db.query(UserDB).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_admin = not user.is_admin
+    db.commit()
+    return {"id": user.id, "is_admin": user.is_admin}
+
+
+@app.post("/api/portfolio", response_model=PortfolioResponse, status_code=201)
+def add_to_portfolio(req: PortfolioAddRequest, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    existing = db.query(PortfolioDB).filter_by(user_id=current_user.id, signal_id=req.signal_id, asset=req.asset, status="OPEN").first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Already tracking this trade")
+    item = PortfolioDB(
+        user_id=current_user.id,
+        signal_id=req.signal_id,
+        news_title=req.news_title,
+        asset=req.asset,
+        asset_label=req.asset_label,
+        category=req.category or "",
+        direction=req.direction,
+        confidence=req.confidence,
+        entry_price=req.entry_price,
+        notes=req.notes,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return PortfolioResponse(id=item.id, signal_id=item.signal_id, news_title=item.news_title, asset=item.asset, asset_label=item.asset_label, category=item.category, direction=item.direction, confidence=item.confidence, entry_price=item.entry_price, notes=item.notes, status=item.status, created_at=item.created_at)
+
+
+@app.get("/api/portfolio", response_model=list[PortfolioResponse])
+def get_portfolio(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    items = db.query(PortfolioDB).filter_by(user_id=current_user.id).order_by(PortfolioDB.created_at.desc()).all()
+    return [PortfolioResponse(id=i.id, signal_id=i.signal_id, news_title=i.news_title, asset=i.asset, asset_label=i.asset_label, category=i.category, direction=i.direction, confidence=i.confidence, entry_price=i.entry_price, notes=i.notes, status=i.status, created_at=i.created_at) for i in items]
+
+
+@app.delete("/api/portfolio/{item_id}", status_code=204)
+def remove_from_portfolio(item_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    item = db.query(PortfolioDB).filter_by(id=item_id, user_id=current_user.id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(item)
+    db.commit()
+
+
+@app.patch("/api/portfolio/{item_id}/close", response_model=PortfolioResponse)
+def close_trade(item_id: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    item = db.query(PortfolioDB).filter_by(id=item_id, user_id=current_user.id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Not found")
+    item.status = "CLOSED"
+    db.commit()
+    return PortfolioResponse(id=item.id, signal_id=item.signal_id, news_title=item.news_title, asset=item.asset, asset_label=item.asset_label, category=item.category, direction=item.direction, confidence=item.confidence, entry_price=item.entry_price, notes=item.notes, status=item.status, created_at=item.created_at)
 
 
 @app.get("/api/signals", response_model=list[SignalResponse])
