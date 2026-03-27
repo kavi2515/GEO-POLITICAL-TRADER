@@ -18,6 +18,7 @@ interface MarketAsset {
 }
 
 const CATEGORIES = ["All", "Commodity", "Currency", "Index", "Crypto", "Sector", "Fixed Income"];
+const KNOWN_CATEGORIES = new Set(["Commodity", "Currency", "Index", "Crypto", "Sector", "Fixed Income"]);
 
 const CATEGORY_COLOR: Record<string, string> = {
   Commodity:      "text-yellow-400 border-yellow-400/30 bg-yellow-400/10",
@@ -69,6 +70,7 @@ export default function MarketsPage({ signals, onRefresh }: Props) {
 
   const allAssets = buildMarketAssets(signals);
   const filtered = allAssets.filter(a =>
+    KNOWN_CATEGORIES.has(a.category) &&
     (activeCategory === "All" || a.category === activeCategory) &&
     (search === "" || a.asset_label.toLowerCase().includes(search.toLowerCase()))
   );
