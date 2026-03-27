@@ -15,14 +15,33 @@ from dateutil import parser as dateparser
 logger = logging.getLogger(__name__)
 
 RSS_FEEDS = [
-    {"name": "Reuters",        "url": "https://feeds.reuters.com/reuters/worldNews"},
-    {"name": "BBC World",      "url": "http://feeds.bbci.co.uk/news/world/rss.xml"},
-    {"name": "Al Jazeera",     "url": "https://www.aljazeera.com/xml/rss/all.xml"},
-    {"name": "The Guardian",   "url": "https://www.theguardian.com/world/rss"},
-    {"name": "CNBC",           "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html"},
-    {"name": "AP News",        "url": "https://rsshub.app/apnews/topics/apf-worldnews"},
-    {"name": "MarketWatch",    "url": "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines"},
-    {"name": "Financial Times","url": "https://www.ft.com/rss/home/uk"},
+    # Global news
+    {"name": "Reuters",           "url": "https://feeds.reuters.com/reuters/worldNews"},
+    {"name": "BBC World",         "url": "http://feeds.bbci.co.uk/news/world/rss.xml"},
+    {"name": "Al Jazeera",        "url": "https://www.aljazeera.com/xml/rss/all.xml"},
+    {"name": "The Guardian",      "url": "https://www.theguardian.com/world/rss"},
+    {"name": "AP News",           "url": "https://rsshub.app/apnews/topics/apf-worldnews"},
+    {"name": "DW News",           "url": "https://rss.dw.com/rdf/rss-en-world"},
+    {"name": "France 24",         "url": "https://www.france24.com/en/rss"},
+    {"name": "South China Morning Post", "url": "https://www.scmp.com/rss/91/feed"},
+    {"name": "The Hindu",         "url": "https://www.thehindu.com/news/international/?service=rss"},
+    {"name": "ABC News",          "url": "https://feeds.abcnews.com/abcnews/internationalheadlines"},
+    {"name": "NPR World",         "url": "https://feeds.npr.org/1004/rss.xml"},
+    # Finance & markets
+    {"name": "CNBC",              "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html"},
+    {"name": "MarketWatch",       "url": "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines"},
+    {"name": "Financial Times",   "url": "https://www.ft.com/rss/home/uk"},
+    {"name": "Bloomberg Markets", "url": "https://feeds.bloomberg.com/markets/news.rss"},
+    {"name": "Investing.com",     "url": "https://www.investing.com/rss/news.rss"},
+    {"name": "Seeking Alpha",     "url": "https://seekingalpha.com/market_currents.xml"},
+    # Geopolitics & defence
+    {"name": "Foreign Policy",    "url": "https://foreignpolicy.com/feed/"},
+    {"name": "Defense News",      "url": "https://www.defensenews.com/arc/outboundfeeds/rss/?outputType=xml"},
+    {"name": "The Diplomat",      "url": "https://thediplomat.com/feed/"},
+    {"name": "War on the Rocks",  "url": "https://warontherocks.com/feed/"},
+    # Energy & commodities
+    {"name": "Oil Price",         "url": "https://oilprice.com/rss/main"},
+    {"name": "Reuters Commodities","url": "https://feeds.reuters.com/reuters/companyNews"},
 ]
 
 TIMEOUT = aiohttp.ClientTimeout(total=15)
