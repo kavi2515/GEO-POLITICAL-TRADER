@@ -27,6 +27,7 @@ from auth import create_access_token, get_admin_user, get_current_user, hash_pas
 from ml_engine import SignalEngine
 from news_fetcher import fetch_all_feeds
 from nlp_engine import GeopoliticalNLP
+from price_fetcher import fetch_prices
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -564,6 +565,16 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()  # keep alive
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+@app.get("/api/prices")
+def get_prices(current_user: UserDB = Depends(get_current_user)):
+    try:
+        prices = fetch_prices()
+        return prices
+    except Exception as e:
+        logger.error("Price fetch error: %s", e)
+        return {}
 
 
 @app.get("/api/health")

@@ -1,6 +1,7 @@
 import { TrendingUp, TrendingDown, ExternalLink, Zap, Plus, Check } from "lucide-react";
 import { useState } from "react";
 import type { SignalItem } from "../types";
+import { usePrices, type PriceData } from "../hooks/usePrices";
 
 interface Props {
   signals: SignalItem[];
@@ -63,6 +64,7 @@ const SEVERITY_COLOR: Record<string, string> = {
 
 export default function StocksPage({ signals }: Props) {
   const { buys, sells } = aggregateAssets(signals);
+  const { prices, loading: pricesLoading } = usePrices();
 
   if (signals.length === 0) {
     return (
@@ -79,6 +81,7 @@ export default function StocksPage({ signals }: Props) {
         <Zap size={16} className="text-terminal-accent" />
         <h2 className="text-terminal-accent text-sm tracking-widest font-bold glow-accent">TRADING RECOMMENDATIONS</h2>
         <span className="text-terminal-dim text-xs">— based on {signals.length} geopolitical signals</span>
+        {pricesLoading && <span className="text-terminal-dim text-xs animate-pulse">· fetching prices...</span>}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -88,7 +91,7 @@ export default function StocksPage({ signals }: Props) {
             <h3 className="text-terminal-buy font-bold tracking-widest text-sm glow-buy">BUY SIGNALS</h3>
             <span className="ml-auto text-xs bg-terminal-buy/15 text-terminal-buy border border-terminal-buy/40 px-2 py-0.5 rounded">{buys.length} ASSETS</span>
           </div>
-          {buys.map((a) => <AssetCard key={a.asset} asset={a} />)}
+          {buys.map((a) => <AssetCard key={a.asset} asset={a} price={prices[a.asset]} />)}
         </div>
 
         <div className="space-y-3">
@@ -97,14 +100,14 @@ export default function StocksPage({ signals }: Props) {
             <h3 className="text-terminal-sell font-bold tracking-widest text-sm glow-sell">SELL SIGNALS</h3>
             <span className="ml-auto text-xs bg-terminal-sell/15 text-terminal-sell border border-terminal-sell/40 px-2 py-0.5 rounded">{sells.length} ASSETS</span>
           </div>
-          {sells.map((a) => <AssetCard key={a.asset} asset={a} />)}
+          {sells.map((a) => <AssetCard key={a.asset} asset={a} price={prices[a.asset]} />)}
         </div>
       </div>
     </div>
   );
 }
 
-function AssetCard({ asset }: { asset: AssetSummary }) {
+function AssetCard({ asset, price }: { asset: AssetSummary; price?: PriceData }) {
   const isBuy = asset.direction === "BUY";
   const borderColor = isBuy ? "border-terminal-buy/30" : "border-terminal-sell/30";
   const bgColor = isBuy ? "bg-terminal-buy/5" : "bg-terminal-sell/5";
@@ -143,6 +146,14 @@ function AssetCard({ asset }: { asset: AssetSummary }) {
         <div>
           <div className={`text-base font-bold tracking-wide ${textColor} ${glowClass}`}>{asset.asset_label}</div>
           <div className="text-terminal-dim text-xs uppercase tracking-wider">{asset.category}</div>
+          {price && (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-terminal-text font-mono font-bold text-sm">{price.formatted}</span>
+              <span className={`text-xs font-mono font-bold ${price.change_pct >= 0 ? "text-terminal-buy glow-buy" : "text-terminal-sell glow-sell"}`}>
+                {price.change_pct >= 0 ? "▲" : "▼"} {Math.abs(price.change_pct).toFixed(2)}%
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
