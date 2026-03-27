@@ -1,68 +1,100 @@
 """
-Real-time price fetcher using yfinance (no API key required).
+Real-time price fetcher using Stooq (free, no API key, works on AWS).
 Prices are cached in memory and refreshed every 5 minutes.
 """
 import logging
 import time
-from typing import Optional
-
-import yfinance as yf
+import csv
+import io
+import requests
 
 logger = logging.getLogger(__name__)
 
-# Asset key → Yahoo Finance ticker
+# Asset key → Stooq symbol
 TICKER_MAP: dict[str, str] = {
-    "OIL/BRENT":        "BZ=F",
-    "OIL/WTI":          "CL=F",
-    "NATGAS":           "NG=F",
-    "GOLD":             "GC=F",
-    "SILVER":           "SI=F",
-    "COPPER":           "HG=F",
-    "WHEAT":            "ZW=F",
-    "SOYBEANS":         "ZS=F",
-    "USD":              "DX-Y.NYB",
-    "EUR":              "EURUSD=X",
-    "JPY":              "USDJPY=X",
-    "GBP":              "GBPUSD=X",
-    "CHF":              "USDCHF=X",
-    "CNY":              "USDCNY=X",
-    "RUB":              "USDRUB=X",
-    "TRY":              "USDTRY=X",
-    "SPX500":           "^GSPC",
-    "NASDAQ":           "^IXIC",
-    "DAX":              "^GDAXI",
-    "NIKKEI225":        "^N225",
-    "FTSE100":          "^FTSE",
+    "OIL/BRENT":        "BRENUSD",
+    "OIL/WTI":          "OILUSD",
+    "NATGAS":           "NGAS.F",
+    "GOLD":             "XAUUSD",
+    "SILVER":           "XAGUSD",
+    "COPPER":           "HGUSD",
+    "WHEAT":            "ZW.F",
+    "SOYBEANS":         "ZS.F",
+    "USD":              "DXY",
+    "EUR":              "EURUSD",
+    "JPY":              "USDJPY",
+    "GBP":              "GBPUSD",
+    "CHF":              "USDCHF",
+    "CNY":              "USDCNY",
+    "RUB":              "USDRUB",
+    "TRY":              "USDTRY",
+    "SPX500":           "^SPX",
+    "NASDAQ":           "^NDQ",
+    "DAX":              "^DAX",
+    "NIKKEI225":        "^NKX",
+    "FTSE100":          "^FTX",
     "HSI":              "^HSI",
-    "CRYPTO/BTC":       "BTC-USD",
-    "DEFENCE":          "ITA",
-    "TECH":             "XLK",
-    "AIRLINE":          "JETS",
-    "INSURANCE":        "IAK",
-    "CONSTRUCTION":     "ITB",
-    "TRANSPORT":        "IYT",
-    "BONDS":            "TLT",
-    "EMERGING_MARKETS": "EEM",
-    "REAL_ESTATE":      "VNQ",
-    "SEMICONDUCTORS":   "SOXX",
+    "CRYPTO/BTC":       "BTCUSD",
+    "DEFENCE":          "ITA.US",
+    "TECH":             "XLK.US",
+    "AIRLINE":          "JETS.US",
+    "INSURANCE":        "IAK.US",
+    "CONSTRUCTION":     "ITB.US",
+    "TRANSPORT":        "IYT.US",
+    "BONDS":            "TLT.US",
+    "EMERGING_MARKETS": "EEM.US",
+    "REAL_ESTATE":      "VNQ.US",
+    "SEMICONDUCTORS":   "SOXX.US",
 }
 
-# Cache: {asset_key: {price, change_pct, currency, updated_at}}
 _cache: dict[str, dict] = {}
 _last_fetch: float = 0
 CACHE_TTL = 300  # 5 minutes
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+}
 
-def _format_price(price: float, ticker: str) -> str:
+
+def _fetch_single(symbol: str) -> dict | None:
+    url = f"https://stooq.com/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv"
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=8)
+        if r.status_code != 200 or not r.text.strip():
+            return None
+        reader = csv.DictReader(io.StringIO(r.text))
+        rows = list(reader)
+        if not rows:
+            return None
+        row = rows[0]
+        close = float(row.get("Close", 0) or 0)
+        open_ = float(row.get("Open", close) or close)
+        if close <= 0:
+            return None
+        change_pct = ((close - open_) / open_ * 100) if open_ else 0
+        return {
+            "price": round(close, 4),
+            "change_pct": round(change_pct, 2),
+            "ticker": symbol,
+            "formatted": _format(close),
+        }
+    except Exception as e:
+        logger.debug("Stooq fetch failed for %s: %s", symbol, e)
+        return None
+
+
+def _format(price: float) -> str:
     if price >= 10000:
         return f"{price:,.0f}"
     elif price >= 100:
         return f"{price:,.2f}"
-    else:
+    elif price >= 1:
         return f"{price:.4f}"
+    else:
+        return f"{price:.6f}"
 
 
-def fetch_prices(assets: Optional[list[str]] = None) -> dict[str, dict]:
+def fetch_prices(assets: list[str] | None = None) -> dict[str, dict]:
     global _last_fetch, _cache
 
     now = time.time()
@@ -70,60 +102,21 @@ def fetch_prices(assets: Optional[list[str]] = None) -> dict[str, dict]:
         return _cache
 
     keys = assets or list(TICKER_MAP.keys())
-    tickers_to_fetch = [TICKER_MAP[k] for k in keys if k in TICKER_MAP]
+    result: dict[str, dict] = {}
 
-    if not tickers_to_fetch:
-        return {}
+    for asset_key in keys:
+        symbol = TICKER_MAP.get(asset_key)
+        if not symbol:
+            continue
+        data = _fetch_single(symbol)
+        if data:
+            result[asset_key] = data
 
-    try:
-        data = yf.download(
-            tickers=tickers_to_fetch,
-            period="2d",
-            interval="1d",
-            group_by="ticker",
-            auto_adjust=True,
-            progress=False,
-            threads=True,
-        )
-
-        result: dict[str, dict] = {}
-
-        for asset_key in keys:
-            ticker = TICKER_MAP.get(asset_key)
-            if not ticker:
-                continue
-            try:
-                if len(tickers_to_fetch) == 1:
-                    df = data
-                else:
-                    df = data[ticker]
-
-                if df is None or df.empty or len(df) < 1:
-                    continue
-
-                close = df["Close"].dropna()
-                if len(close) < 1:
-                    continue
-
-                current = float(close.iloc[-1])
-                prev = float(close.iloc[-2]) if len(close) >= 2 else current
-                change_pct = ((current - prev) / prev * 100) if prev else 0
-
-                result[asset_key] = {
-                    "price": round(current, 4),
-                    "change_pct": round(change_pct, 2),
-                    "ticker": ticker,
-                    "formatted": _format_price(current, ticker),
-                }
-            except Exception as e:
-                logger.debug("Price fetch failed for %s (%s): %s", asset_key, ticker, e)
-
-        if result:
-            _cache = result
-            _last_fetch = now
-            logger.info("Fetched prices for %d assets", len(result))
-
-    except Exception as e:
-        logger.error("yfinance batch fetch failed: %s", e)
+    if result:
+        _cache = result
+        _last_fetch = now
+        logger.info("Fetched prices for %d/%d assets", len(result), len(keys))
+    else:
+        logger.warning("No prices fetched from Stooq")
 
     return _cache
