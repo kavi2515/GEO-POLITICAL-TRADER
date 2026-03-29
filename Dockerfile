@@ -3,7 +3,7 @@ FROM node:20-slim AS frontend-build
 
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm install --silent
+RUN npm install --silent && npm install react-simple-maps recharts --silent
 COPY frontend/ ./
 RUN npm run build          # outputs to /app/frontend/dist
 
