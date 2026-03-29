@@ -284,8 +284,8 @@ export default function HomePage({ signals, prices, onNavigate, userName }: Prop
               projectionConfig={{ scale: 130, center: [10, 10] }}
             >
               <Geographies geography={GEO_URL}>
-                {({ geographies }) =>
-                  geographies.map(geo => {
+                {({ geographies }: { geographies: any[] }) =>
+                  geographies.map((geo: any) => {
                     const isoNum = Number(geo.id);
                     const sev = countryMap.get(isoNum);
                     const fill = severityFill(sev);

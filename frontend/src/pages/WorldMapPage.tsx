@@ -173,7 +173,7 @@ export default function WorldMapPage({ signals }: Props) {
           >
             <ZoomableGroup zoom={1}>
               <Geographies geography={GEO_URL}>
-                {({ geographies }) =>
+                {({ geographies }: { geographies: any[] }) =>
                   geographies.map((geo: any) => {
                     const isoNum = Number(geo.id);
                     const data = countryMap.get(isoNum);
