@@ -13,11 +13,15 @@ jobs:
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          APP_SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          APP_DATABASE_URL: ${{ secrets.DATABASE_URL }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           timeout: 300s
+          envs: APP_SECRET_KEY,APP_DATABASE_URL
           script: |
             cd /home/ubuntu/GEO-POLITICAL-TRADER
             git pull origin main
@@ -30,8 +34,8 @@ jobs:
             docker run -d --name geotrader \
               -p 8000:8000 \
               -v /home/ubuntu/data:/data \
-              -e SECRET_KEY=${{ secrets.SECRET_KEY }} \
-              -e DATABASE_URL=${{ secrets.DATABASE_URL }} \
+              -e SECRET_KEY="$APP_SECRET_KEY" \
+              -e DATABASE_URL="$APP_DATABASE_URL" \
               geotrader
 
             echo "Deploy complete"
