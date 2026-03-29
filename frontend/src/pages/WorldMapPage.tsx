@@ -174,7 +174,7 @@ export default function WorldMapPage({ signals }: Props) {
             <ZoomableGroup zoom={1}>
               <Geographies geography={GEO_URL}>
                 {({ geographies }) =>
-                  geographies.map((geo) => {
+                  geographies.map((geo: any) => {
                     const isoNum = Number(geo.id);
                     const data = countryMap.get(isoNum);
                     const fill = severityFill(data?.maxSeverity);
@@ -200,7 +200,7 @@ export default function WorldMapPage({ signals }: Props) {
                           },
                           pressed: { outline: "none" },
                         }}
-                        onMouseEnter={(e) => {
+                        onMouseEnter={(e: any) => {
                           if (!isActive) return;
                           setTooltip({
                             x: e.clientX,
@@ -209,7 +209,7 @@ export default function WorldMapPage({ signals }: Props) {
                             data,
                           });
                         }}
-                        onMouseMove={(e) => {
+                        onMouseMove={(e: any) => {
                           if (!isActive) return;
                           setTooltip(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null);
                         }}
