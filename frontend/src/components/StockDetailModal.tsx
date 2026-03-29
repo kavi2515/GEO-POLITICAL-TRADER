@@ -226,8 +226,8 @@ export default function StockDetailModal({ asset, price, onClose }: Props) {
                   <Tooltip
                     contentStyle={{ background: "#050d18", border: `1px solid ${lineColor}44`, borderRadius: 6, fontSize: 11 }}
                     labelStyle={{ color: "#7a9abf" }}
-                    formatter={(val) => [formatPrice(Number(val)), "Close"]}
-                    labelFormatter={(d) => formatLabel(String(d))}
+                    formatter={(val: any) => [formatPrice(Number(val)), "Close"]}
+                    labelFormatter={(d: any) => formatLabel(String(d))}
                   />
                   {price && (
                     <ReferenceLine
