@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -9,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from database import UserDB, get_db
 
-SECRET_KEY = "geopolitical-trader-secret-key-change-in-production"
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is not set")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 

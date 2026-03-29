@@ -13,16 +13,21 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import (
-    NewsItemDB, PortfolioDB, SignalDB, SubscriberDB, UserDB,
-    create_tables, get_db,
+    BotConfigDB, BotPositionDB, BotTradeDB,
+    NewsItemDB, PasswordResetTokenDB, PortfolioDB, SignalDB, SubscriberDB, UserDB,
+    WatchlistDB, create_tables, get_db,
 )
+from bot_engine import run_bot_cycle, get_or_create_config
 from auth import create_access_token, get_admin_user, get_current_user, hash_password, verify_password
 from ml_engine import SignalEngine
 from news_fetcher import fetch_all_feeds
@@ -188,6 +193,7 @@ Market Signals:
 
 async def background_loop():
     from database import SessionLocal
+    bot_tick = 0
     while True:
         db = SessionLocal()
         try:
@@ -196,7 +202,17 @@ async def background_loop():
             logger.error("Background loop error: %s", exc)
         finally:
             db.close()
-        await asyncio.sleep(300)  # refresh every 5 minutes
+
+        # Run bot every 3 cycles (~15 min)
+        bot_tick += 1
+        if bot_tick >= 3:
+            bot_tick = 0
+            try:
+                run_bot_cycle()
+            except Exception as exc:
+                logger.error("Bot cycle error: %s", exc)
+
+        await asyncio.sleep(300)  # 5 minutes per cycle
 
 
 # ---------------------------------------------------------------------------
@@ -211,13 +227,17 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Geopolitical Trader API", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://geotrader.io", "http://localhost:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 
 # ---------------------------------------------------------------------------
@@ -324,7 +344,8 @@ class StatsResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 @app.post("/api/auth/register", response_model=UserResponse, status_code=201)
-def register(req: RegisterRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, req: RegisterRequest, db: Session = Depends(get_db)):
     email = req.email.strip().lower()
     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         raise HTTPException(status_code=422, detail="Invalid email address")
@@ -338,7 +359,8 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login")
-def login(req: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
     email = req.email.strip().lower()
     user = db.query(UserDB).filter_by(email=email).first()
     if not user or not verify_password(req.password, user.hashed_password):
@@ -350,6 +372,75 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 @app.get("/api/auth/me", response_model=UserResponse)
 def me(current_user: UserDB = Depends(get_current_user)):
     return UserResponse(id=current_user.id, email=current_user.email, name=current_user.name, is_admin=current_user.is_admin)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+@app.post("/api/auth/forgot-password", status_code=200)
+@limiter.limit("3/minute")
+def forgot_password(request: Request, req: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    import secrets as _secrets
+    email = req.email.strip().lower()
+    user = db.query(UserDB).filter_by(email=email).first()
+    # Always return success to avoid email enumeration
+    if user:
+        token = _secrets.token_urlsafe(32)
+        expires = datetime.utcnow() + timedelta(hours=1)
+        db.add(PasswordResetTokenDB(user_id=user.id, token=token, expires_at=expires))
+        db.commit()
+
+        reset_link = f"https://geotrader.io/reset-password?token={token}"
+        smtp_host = os.environ.get("SMTP_HOST", "")
+        smtp_user = os.environ.get("SMTP_USER", "")
+        smtp_pass = os.environ.get("SMTP_PASS", "")
+        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+        if smtp_host and smtp_user and smtp_pass:
+            try:
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = "GeoTrader — Reset Your Password"
+                msg["From"] = smtp_user
+                msg["To"] = email
+                body = f"""Hi {user.name},\n\nClick the link below to reset your GeoTrader password. This link expires in 1 hour.\n\n{reset_link}\n\nIf you did not request a password reset, ignore this email.\n\n— GeoTrader"""
+                msg.attach(MIMEText(body, "plain"))
+                with smtplib.SMTP(smtp_host, smtp_port) as server:
+                    server.starttls()
+                    server.login(smtp_user, smtp_pass)
+                    server.sendmail(smtp_user, email, msg.as_string())
+            except Exception as e:
+                logger.warning("Failed to send password reset email: %s", e)
+    return {"message": "If that email is registered, a reset link has been sent."}
+
+
+@app.post("/api/auth/reset-password", status_code=200)
+@limiter.limit("5/minute")
+def reset_password(request: Request, req: ResetPasswordRequest, db: Session = Depends(get_db)):
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=422, detail="Password must be at least 6 characters")
+    record = db.query(PasswordResetTokenDB).filter_by(token=req.token, used=False).first()
+    if not record or record.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    user = db.query(UserDB).filter_by(id=record.user_id).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="User not found")
+    user.hashed_password = hash_password(req.new_password)
+    record.used = True
+    db.commit()
+    return {"message": "Password updated successfully"}
+
+
+@app.delete("/api/auth/account", status_code=204)
+def delete_account(current_user: UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.query(PortfolioDB).filter_by(user_id=current_user.id).delete()
+    db.query(SubscriberDB).filter_by(email=current_user.email).delete()
+    db.query(PasswordResetTokenDB).filter_by(user_id=current_user.id).delete()
+    db.delete(current_user)
+    db.commit()
 
 
 @app.get("/api/admin/users", response_model=list[AdminUserResponse])
@@ -375,6 +466,8 @@ def admin_make_admin(user_id: str, db: Session = Depends(get_db), admin: UserDB 
     user = db.query(UserDB).filter_by(id=user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.id == admin.id:
+        raise HTTPException(status_code=400, detail="Cannot change your own admin status")
     user.is_admin = not user.is_admin
     db.commit()
     return {"id": user.id, "is_admin": user.is_admin}
@@ -558,13 +651,239 @@ async def manual_refresh(db: Session = Depends(get_db)):
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, token: str = ""):
+    from auth import get_current_user as _get_user
+    from database import SessionLocal as _SL
+    db = _SL()
+    try:
+        _get_user(token=token, db=db)
+    except Exception:
+        await websocket.close(code=1008)
+        db.close()
+        return
+    db.close()
     await manager.connect(websocket)
     try:
         while True:
-            await websocket.receive_text()  # keep alive
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+@app.get("/api/chart/{asset_key:path}")
+def get_chart(asset_key: str, timeframe: str = "30d", current_user: UserDB = Depends(get_current_user)):
+    from price_fetcher import fetch_history, fetch_intraday
+    intraday_map = {"1m": 1, "5m": 5, "1h": 60, "24h": 60}
+    if timeframe in intraday_map:
+        return fetch_intraday(asset_key, intraday_map[timeframe])
+    day_map = {"7d": 7, "30d": 30, "90d": 90}
+    return fetch_history(asset_key, day_map.get(timeframe, 30))
+
+
+# ---------------------------------------------------------------------------
+# Bot API — admin only
+# ---------------------------------------------------------------------------
+
+class BotConfigUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    starting_capital: Optional[float] = None
+    min_signal_score: Optional[float] = None
+    max_position_pct: Optional[float] = None
+    stop_loss_pct: Optional[float] = None
+    take_profit_pct: Optional[float] = None
+    max_positions: Optional[int] = None
+
+
+@app.get("/api/bot/status")
+def bot_status(db: Session = Depends(get_db), current_user: UserDB = Depends(get_admin_user)):
+    from price_fetcher import fetch_prices as _fp
+    config    = get_or_create_config(db)
+    positions = db.query(BotPositionDB).order_by(BotPositionDB.created_at.desc()).all()
+    prices    = _fp()
+
+    position_data = []
+    position_value = 0.0
+    for pos in positions:
+        p = prices.get(pos.asset, {})
+        current_price = p.get("price", pos.entry_price)
+        pnl_pct = (current_price - pos.entry_price) / pos.entry_price * 100 if pos.entry_price else 0
+        pnl_usd = round(pos.quantity_usd * pnl_pct / 100, 4)
+        current_value = round(pos.quantity_usd + pnl_usd, 4)
+        position_value += current_value
+        position_data.append({
+            "id":                 pos.id,
+            "asset":              pos.asset,
+            "asset_label":        pos.asset_label,
+            "category":           pos.category,
+            "entry_price":        pos.entry_price,
+            "current_price":      round(current_price, 6),
+            "quantity_usd":       pos.quantity_usd,
+            "current_value":      current_value,
+            "pnl_pct":            round(pnl_pct, 2),
+            "pnl_usd":            pnl_usd,
+            "stop_loss_price":    pos.stop_loss_price,
+            "take_profit_price":  pos.take_profit_price,
+            "entry_signal_score": pos.entry_signal_score,
+            "entry_reasoning":    pos.entry_reasoning,
+            "opened_at":          pos.created_at.isoformat(),
+        })
+
+    total_value  = round(config.available_cash + position_value, 2)
+    total_pnl    = round(total_value - config.starting_capital, 2)
+    total_pnl_pct = round(total_pnl / config.starting_capital * 100, 2) if config.starting_capital else 0
+
+    return {
+        "enabled":          config.enabled,
+        "starting_capital": config.starting_capital,
+        "available_cash":   round(config.available_cash, 2),
+        "position_value":   round(position_value, 2),
+        "total_value":      total_value,
+        "total_pnl":        total_pnl,
+        "total_pnl_pct":    total_pnl_pct,
+        "positions":        position_data,
+        "config": {
+            "min_signal_score": config.min_signal_score,
+            "max_position_pct": config.max_position_pct,
+            "stop_loss_pct":    config.stop_loss_pct,
+            "take_profit_pct":  config.take_profit_pct,
+            "max_positions":    config.max_positions,
+        },
+    }
+
+
+@app.get("/api/bot/trades")
+def bot_trades(limit: int = 100, db: Session = Depends(get_db), current_user: UserDB = Depends(get_admin_user)):
+    trades = db.query(BotTradeDB).order_by(BotTradeDB.created_at.desc()).limit(limit).all()
+    return [
+        {
+            "id":           t.id,
+            "asset":        t.asset,
+            "asset_label":  t.asset_label,
+            "category":     t.category,
+            "action":       t.action,
+            "price":        t.price,
+            "quantity_usd": t.quantity_usd,
+            "signal_score": t.signal_score,
+            "reasoning":    t.reasoning,
+            "pnl":          t.pnl,
+            "created_at":   t.created_at.isoformat(),
+        }
+        for t in trades
+    ]
+
+
+@app.patch("/api/bot/config")
+def update_bot_config(req: BotConfigUpdate, db: Session = Depends(get_db), current_user: UserDB = Depends(get_admin_user)):
+    if req.starting_capital is not None and req.starting_capital < 1:
+        raise HTTPException(status_code=422, detail="Starting capital must be at least $1")
+    if req.min_signal_score is not None and not (0 <= req.min_signal_score <= 200):
+        raise HTTPException(status_code=422, detail="Min signal score must be 0–200")
+    if req.max_position_pct is not None and not (1 <= req.max_position_pct <= 100):
+        raise HTTPException(status_code=422, detail="Max position size must be 1–100%")
+    if req.stop_loss_pct is not None and not (0.1 <= req.stop_loss_pct <= 50):
+        raise HTTPException(status_code=422, detail="Stop loss must be 0.1–50%")
+    if req.take_profit_pct is not None and not (0.1 <= req.take_profit_pct <= 500):
+        raise HTTPException(status_code=422, detail="Take profit must be 0.1–500%")
+    if req.max_positions is not None and not (1 <= req.max_positions <= 20):
+        raise HTTPException(status_code=422, detail="Max positions must be 1–20")
+
+    config = get_or_create_config(db)
+
+    # If re-initialising capital, reset available cash too
+    if req.starting_capital is not None and req.starting_capital != config.starting_capital:
+        config.starting_capital = req.starting_capital
+        config.available_cash   = req.starting_capital
+        db.query(BotPositionDB).delete()
+
+    if req.enabled is not None:             config.enabled          = req.enabled
+    if req.min_signal_score is not None:    config.min_signal_score = req.min_signal_score
+    if req.max_position_pct is not None:    config.max_position_pct = req.max_position_pct
+    if req.stop_loss_pct is not None:       config.stop_loss_pct    = req.stop_loss_pct
+    if req.take_profit_pct is not None:     config.take_profit_pct  = req.take_profit_pct
+    if req.max_positions is not None:       config.max_positions    = req.max_positions
+
+    config.updated_at = datetime.utcnow()
+    db.commit()
+    return {"message": "Bot config updated"}
+
+
+@app.post("/api/bot/run")
+def bot_run_now(db: Session = Depends(get_db), current_user: UserDB = Depends(get_admin_user)):
+    """Manually trigger one bot cycle."""
+    try:
+        run_bot_cycle()
+        return {"message": "Bot cycle completed"}
+    except Exception as e:
+        logger.error("Bot run error: %s", e)
+        raise HTTPException(status_code=500, detail="Bot cycle failed")
+
+
+# ---------------------------------------------------------------------------
+# Watchlist API
+# ---------------------------------------------------------------------------
+
+class WatchlistAddRequest(BaseModel):
+    asset: str
+    asset_label: str
+    category: Optional[str] = ""
+
+
+@app.get("/api/watchlist")
+def get_watchlist(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    items = db.query(WatchlistDB).filter_by(user_id=current_user.id).order_by(WatchlistDB.created_at.asc()).all()
+    return [{"id": i.id, "asset": i.asset, "asset_label": i.asset_label, "category": i.category, "created_at": i.created_at.isoformat()} for i in items]
+
+
+@app.post("/api/watchlist", status_code=201)
+def add_to_watchlist(req: WatchlistAddRequest, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    existing = db.query(WatchlistDB).filter_by(user_id=current_user.id, asset=req.asset).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Already in watchlist")
+    item = WatchlistDB(user_id=current_user.id, asset=req.asset, asset_label=req.asset_label, category=req.category or "")
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return {"id": item.id, "asset": item.asset, "asset_label": item.asset_label, "category": item.category, "created_at": item.created_at.isoformat()}
+
+
+@app.delete("/api/watchlist/{asset:path}", status_code=204)
+def remove_from_watchlist(asset: str, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    item = db.query(WatchlistDB).filter_by(user_id=current_user.id, asset=asset).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(item)
+    db.commit()
+
+
+@app.get("/api/watchlist/signals")
+def get_watchlist_signals(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    """Return recent signals for assets in the user's watchlist."""
+    items = db.query(WatchlistDB).filter_by(user_id=current_user.id).all()
+    watched_assets = {i.asset for i in items}
+    if not watched_assets:
+        return []
+
+    cutoff = datetime.utcnow() - timedelta(hours=48)
+    signals = db.query(SignalDB).filter(SignalDB.created_at >= cutoff).order_by(SignalDB.published_at.desc()).limit(200).all()
+
+    results = []
+    for s in signals:
+        ms = [m for m in (s.market_signals or []) if m.get("asset") in watched_assets]
+        if not ms:
+            continue
+        results.append({
+            "id": s.id,
+            "news_title": s.news_title,
+            "news_url": s.news_url,
+            "source": s.source,
+            "published_at": s.published_at.isoformat(),
+            "severity": s.severity,
+            "event_label": s.event_label,
+            "market_signals": ms,
+        })
+        if len(results) >= 50:
+            break
+    return results
 
 
 @app.get("/api/prices")

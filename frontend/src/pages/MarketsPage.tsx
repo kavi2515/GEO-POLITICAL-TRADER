@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, RefreshCw, Activity } from "lucide-react";
+import { TrendingUp, TrendingDown, RefreshCw, Activity, ChevronRight } from "lucide-react";
 import { usePrices } from "../hooks/usePrices";
 import type { SignalItem } from "../types";
+import StockDetailModal, { type StockDetailAsset } from "../components/StockDetailModal";
 
 interface Props {
   signals: SignalItem[];
@@ -17,10 +18,11 @@ interface MarketAsset {
   signalCount: number;
 }
 
-const CATEGORIES = ["All", "Commodity", "Currency", "Index", "Crypto", "Sector", "Fixed Income"];
-const KNOWN_CATEGORIES = new Set(["Commodity", "Currency", "Index", "Crypto", "Sector", "Fixed Income"]);
+const CATEGORIES = ["All", "Stock", "Commodity", "Currency", "Index", "Crypto", "Sector", "Fixed Income"];
+const KNOWN_CATEGORIES = new Set(["Stock", "Commodity", "Currency", "Index", "Crypto", "Sector", "Fixed Income"]);
 
 const CATEGORY_COLOR: Record<string, string> = {
+  Stock:          "text-green-400 border-green-400/30 bg-green-400/10",
   Commodity:      "text-yellow-400 border-yellow-400/30 bg-yellow-400/10",
   Currency:       "text-blue-400 border-blue-400/30 bg-blue-400/10",
   Index:          "text-purple-400 border-purple-400/30 bg-purple-400/10",
@@ -62,11 +64,41 @@ function buildMarketAssets(signals: SignalItem[]): MarketAsset[] {
   return assets.sort((a, b) => b.confidence - a.confidence);
 }
 
+function buildDetailAsset(asset: MarketAsset, signals: SignalItem[]): StockDetailAsset {
+  const sources: StockDetailAsset["sources"] = [];
+  let topSignalId = "";
+  let topNewsTitle = "";
+
+  for (const sig of signals) {
+    for (const ms of sig.market_signals) {
+      if (ms.asset === asset.asset && sources.length < 5) {
+        if (!topSignalId) { topSignalId = sig.id; topNewsTitle = sig.news_title; }
+        sources.push({ title: sig.news_title, url: sig.news_url, severity: sig.severity, reasoning: ms.reasoning });
+      }
+    }
+  }
+
+  const direction = asset.signal === "NEUTRAL" ? "BUY" : asset.signal;
+  return {
+    asset: asset.asset,
+    asset_label: asset.asset_label,
+    category: asset.category,
+    direction,
+    avgConfidence: asset.confidence,
+    count: asset.signalCount,
+    topSignalId,
+    topNewsTitle,
+    sources,
+  };
+}
+
 export default function MarketsPage({ signals, onRefresh }: Props) {
   const { prices, loading: pricesLoading } = usePrices();
   const [activeCategory, setActiveCategory] = useState("All");
   const [search, setSearch] = useState("");
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [selected, setSelected] = useState<StockDetailAsset | null>(null);
+  const [selectedPrice, setSelectedPrice] = useState<ReturnType<typeof usePrices>["prices"][string] | undefined>();
 
   const allAssets = buildMarketAssets(signals);
   const filtered = allAssets.filter(a =>
@@ -79,6 +111,11 @@ export default function MarketsPage({ signals, onRefresh }: Props) {
     if (!pricesLoading) setLastUpdated(new Date());
   }, [pricesLoading]);
 
+  function handleRowClick(asset: MarketAsset) {
+    setSelected(buildDetailAsset(asset, signals));
+    setSelectedPrice(prices[asset.asset]);
+  }
+
   return (
     <div className="p-4 space-y-4">
       {/* Header */}
@@ -90,7 +127,7 @@ export default function MarketsPage({ signals, onRefresh }: Props) {
           {pricesLoading && <span className="text-terminal-dim text-xs animate-pulse">· updating prices...</span>}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-terminal-dim text-xs">Updated: {lastUpdated.toLocaleTimeString()}</span>
+          <span className="text-terminal-dim text-xs">Click any row for chart · Updated: {lastUpdated.toLocaleTimeString()}</span>
           <button onClick={onRefresh} className="flex items-center gap-1 text-xs text-terminal-dim hover:text-terminal-accent border border-terminal-border hover:border-terminal-accent/40 px-2 py-1 rounded transition-colors">
             <RefreshCw size={11} /> REFRESH
           </button>
@@ -164,14 +201,18 @@ export default function MarketsPage({ signals, onRefresh }: Props) {
             return (
               <div
                 key={asset.asset}
-                className={`grid grid-cols-12 gap-2 px-4 py-3 text-xs border-b border-terminal-border/20 hover:bg-terminal-muted/30 transition-colors ${
-                  isBuy ? "hover:bg-terminal-buy/5" : isSell ? "hover:bg-terminal-sell/5" : ""
+                onClick={() => handleRowClick(asset)}
+                className={`grid grid-cols-12 gap-2 px-4 py-3 text-xs border-b border-terminal-border/20 transition-colors cursor-pointer group ${
+                  isBuy ? "hover:bg-terminal-buy/5" : isSell ? "hover:bg-terminal-sell/5" : "hover:bg-terminal-muted/30"
                 }`}
               >
                 {/* Asset name */}
-                <div className="col-span-3">
-                  <div className="text-terminal-text font-semibold">{asset.asset_label}</div>
-                  <div className="text-terminal-dim text-xs opacity-60">{asset.asset}</div>
+                <div className="col-span-3 flex items-center gap-2">
+                  <div>
+                    <div className="text-terminal-text font-semibold group-hover:text-terminal-accent transition-colors">{asset.asset_label}</div>
+                    <div className="text-terminal-dim text-xs opacity-60">{asset.asset}</div>
+                  </div>
+                  <ChevronRight size={12} className="text-terminal-dim opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all ml-auto" />
                 </div>
 
                 {/* Category */}
@@ -227,6 +268,15 @@ export default function MarketsPage({ signals, onRefresh }: Props) {
           })
         )}
       </div>
+
+      {/* Detail modal */}
+      {selected && (
+        <StockDetailModal
+          asset={selected}
+          price={selectedPrice}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }

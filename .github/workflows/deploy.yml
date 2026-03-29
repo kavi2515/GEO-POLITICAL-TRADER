@@ -1,0 +1,38 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 300s
+          script: |
+            cd /home/ubuntu/GEO-POLITICAL-TRADER
+            git pull origin main
+
+            docker build -t geotrader .
+
+            docker stop geotrader || true
+            docker rm geotrader || true
+
+            docker run -d --name geotrader \
+              -p 8000:8000 \
+              -v /home/ubuntu/data:/data \
+              -e SECRET_KEY=${{ secrets.SECRET_KEY }} \
+              -e DATABASE_URL=${{ secrets.DATABASE_URL }} \
+              geotrader
+
+            echo "Deploy complete"
+            docker logs geotrader --tail 5

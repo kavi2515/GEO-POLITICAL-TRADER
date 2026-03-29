@@ -2,10 +2,14 @@ from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, 
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from datetime import datetime
 import uuid
+import os
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./geopolitical_trader.db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:////data/geopolitical_trader.db")
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+if DATABASE_URL.startswith("postgresql"):
+    engine = create_engine(DATABASE_URL)
+else:
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -85,6 +89,76 @@ class UserDB(Base):
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BotConfigDB(Base):
+    __tablename__ = "bot_config"
+
+    id = Column(Integer, primary_key=True, default=1)
+    enabled = Column(Boolean, default=False)
+    starting_capital = Column(Float, default=100.0)
+    available_cash = Column(Float, default=100.0)
+    min_signal_score = Column(Float, default=65.0)
+    max_position_pct = Column(Float, default=20.0)
+    stop_loss_pct = Column(Float, default=5.0)
+    take_profit_pct = Column(Float, default=15.0)
+    max_positions = Column(Integer, default=5)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BotPositionDB(Base):
+    __tablename__ = "bot_positions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    asset = Column(String, unique=True, nullable=False)
+    asset_label = Column(String)
+    category = Column(String)
+    direction = Column(String, nullable=False, default="BUY")
+    entry_price = Column(Float, nullable=False)
+    quantity_usd = Column(Float, nullable=False)
+    entry_signal_score = Column(Float)
+    entry_reasoning = Column(Text)
+    stop_loss_price = Column(Float)
+    take_profit_price = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BotTradeDB(Base):
+    __tablename__ = "bot_trades"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    asset = Column(String, nullable=False)
+    asset_label = Column(String)
+    category = Column(String)
+    action = Column(String, nullable=False)  # BUY | STOP_LOSS | TAKE_PROFIT | SIGNAL_EXIT
+    price = Column(Float, nullable=False)
+    quantity_usd = Column(Float, nullable=False)
+    signal_score = Column(Float)
+    reasoning = Column(Text)
+    pnl = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WatchlistDB(Base):
+    __tablename__ = "watchlist"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=False)
+    asset = Column(String, nullable=False)        # e.g. GOLD, CRYPTO/BTC
+    asset_label = Column(String, nullable=False)  # e.g. Gold, Bitcoin
+    category = Column(String)                     # e.g. COMMODITIES, CRYPTO
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PasswordResetTokenDB(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=False)
+    token = Column(String, unique=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

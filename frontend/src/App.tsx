@@ -1,4 +1,5 @@
 import { useState } from "react";
+import CookieConsent from "./components/CookieConsent";
 import FilterPanel from "./components/FilterPanel";
 import Header from "./components/Header";
 import NewsTicker from "./components/NewsTicker";
@@ -7,11 +8,18 @@ import SignalCard from "./components/SignalCard";
 import StatsBar from "./components/StatsBar";
 import { useAuth } from "./context/AuthContext";
 import AdminPage from "./pages/AdminPage";
+import BotPage from "./pages/BotPage";
 import AuthPage from "./pages/AuthPage";
+import HomePage from "./pages/HomePage";
 import MarketsPage from "./pages/MarketsPage";
 import PortfolioPage from "./pages/PortfolioPage";
+import PrivacyPage from "./pages/PrivacyPage";
 import StocksPage from "./pages/StocksPage";
+import TermsPage from "./pages/TermsPage";
+import WatchlistPage from "./pages/WatchlistPage";
+import WorldMapPage from "./pages/WorldMapPage";
 import { useSignals } from "./hooks/useSignals";
+import { usePrices } from "./hooks/usePrices";
 import type { Filters } from "./types";
 
 const DEFAULT_FILTERS: Filters = {
@@ -22,7 +30,13 @@ const DEFAULT_FILTERS: Filters = {
   hours:            24,
 };
 
+type Page = "home" | "news" | "stocks" | "markets" | "portfolio" | "worldmap" | "watchlist" | "admin" | "bot";
+
 export default function App() {
+  const path = window.location.pathname;
+  if (path === "/terms") return <TermsPage />;
+  if (path === "/privacy") return <PrivacyPage />;
+
   const { user, loading: authLoading, logout } = useAuth();
 
   if (authLoading) {
@@ -33,7 +47,7 @@ export default function App() {
     );
   }
 
-  if (!user) return <AuthPage />;
+  if (!user || path === "/reset-password") return <AuthPage />;
 
   return <Dashboard onLogout={logout} user={user} />;
 }
@@ -41,9 +55,29 @@ export default function App() {
 function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: string; is_admin: boolean } }) {
   const [filters, setFilters]       = useState<Filters>(DEFAULT_FILTERS);
   const [showRegister, setShowRegister] = useState(false);
-  const [activePage, setActivePage] = useState<"news" | "stocks" | "markets" | "portfolio" | "admin">("news");
+  const [activePage, setActivePage] = useState<Page>("home");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  async function handleDeleteAccount() {
+    const token = localStorage.getItem("token");
+    await fetch("/api/auth/account", { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    onLogout();
+  }
 
   const { signals, stats, loading, newCount, refresh } = useSignals(filters);
+  const { prices } = usePrices();
+
+  const tabs: { id: Page; label: string; adminOnly?: boolean }[] = [
+    { id: "home",      label: "⌂ HOME" },
+    { id: "news",      label: "◈ SIGNALS FEED" },
+    { id: "stocks",    label: "▲ TRADE RECOMMENDATIONS" },
+    { id: "markets",   label: "◎ LIVE MARKETS" },
+    { id: "portfolio", label: "◉ PORTFOLIO" },
+    { id: "worldmap",  label: "⬡ WORLD MAP" },
+    { id: "watchlist", label: "★ WATCHLIST" },
+    { id: "bot",       label: "⚡ AI BOT", adminOnly: true },
+    { id: "admin",     label: "⬡ ADMIN", adminOnly: true },
+  ];
 
   return (
     <div className="min-h-screen bg-terminal-bg text-terminal-text font-mono">
@@ -56,9 +90,22 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
         />
         <div className="flex items-center gap-3 text-xs text-terminal-dim shrink-0">
           <span>{user.name}</span>
-          <button onClick={onLogout} className="text-red-400 hover:text-red-300 border border-red-400/30 px-2 py-1 rounded transition-colors">
-            LOGOUT
-          </button>
+          {showDeleteConfirm ? (
+            <span className="flex items-center gap-2">
+              <span className="text-red-400">Delete account?</span>
+              <button onClick={handleDeleteAccount} className="text-red-400 hover:text-red-300 border border-red-400/30 px-2 py-1 rounded transition-colors">YES</button>
+              <button onClick={() => setShowDeleteConfirm(false)} className="text-terminal-dim hover:text-terminal-text border border-terminal-border px-2 py-1 rounded transition-colors">NO</button>
+            </span>
+          ) : (
+            <>
+              <button onClick={() => setShowDeleteConfirm(true)} className="text-terminal-dim hover:text-red-400 border border-terminal-border hover:border-red-400/30 px-2 py-1 rounded transition-colors">
+                DELETE ACCOUNT
+              </button>
+              <button onClick={onLogout} className="text-red-400 hover:text-red-300 border border-red-400/30 px-2 py-1 rounded transition-colors">
+                LOGOUT
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -66,66 +113,54 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
       <StatsBar stats={stats} />
 
       {/* Page tabs */}
-      <div className="border-b border-terminal-border bg-terminal-card/50">
-        <div className="max-w-screen-2xl mx-auto px-4 flex gap-1">
-          <button
-            onClick={() => setActivePage("news")}
-            className={`px-6 py-2.5 text-xs tracking-widest font-bold transition-all border-b-2 ${
-              activePage === "news"
-                ? "text-terminal-accent border-terminal-accent glow-accent"
-                : "text-terminal-dim border-transparent hover:text-terminal-text"
-            }`}
-          >
-            ◈ SIGNALS FEED
-          </button>
-          <button
-            onClick={() => setActivePage("stocks")}
-            className={`px-6 py-2.5 text-xs tracking-widest font-bold transition-all border-b-2 ${
-              activePage === "stocks"
-                ? "text-terminal-buy border-terminal-buy glow-buy"
-                : "text-terminal-dim border-transparent hover:text-terminal-text"
-            }`}
-          >
-            ▲ TRADE RECOMMENDATIONS
-          </button>
-          <button
-            onClick={() => setActivePage("markets")}
-            className={`px-6 py-2.5 text-xs tracking-widest font-bold transition-all border-b-2 ${
-              activePage === "markets"
-                ? "text-terminal-accent border-terminal-accent glow-accent"
-                : "text-terminal-dim border-transparent hover:text-terminal-text"
-            }`}
-          >
-            ◎ LIVE MARKETS
-          </button>
-          <button
-            onClick={() => setActivePage("portfolio")}
-            className={`px-6 py-2.5 text-xs tracking-widest font-bold transition-all border-b-2 ${
-              activePage === "portfolio"
-                ? "text-terminal-accent border-terminal-accent glow-accent"
-                : "text-terminal-dim border-transparent hover:text-terminal-text"
-            }`}
-          >
-            ◉ PORTFOLIO
-          </button>
-          {user.is_admin && (
-            <button
-              onClick={() => setActivePage("admin")}
-              className={`px-6 py-2.5 text-xs tracking-widest font-bold transition-all border-b-2 ${
-                activePage === "admin"
-                  ? "text-terminal-accent border-terminal-accent glow-accent"
-                  : "text-terminal-dim border-transparent hover:text-terminal-text"
-              }`}
-            >
-              ⬡ ADMIN
-            </button>
-          )}
+      <div className="border-b border-terminal-border bg-terminal-card/50 overflow-x-auto">
+        <div className="max-w-screen-2xl mx-auto px-4 flex gap-1 min-w-max">
+          {tabs.map(tab => {
+            if (tab.adminOnly && !user.is_admin) return null;
+            const isActive = activePage === tab.id;
+            const isBuy = tab.id === "stocks";
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActivePage(tab.id)}
+                className={`px-5 py-2.5 text-xs tracking-widest font-bold transition-all border-b-2 whitespace-nowrap ${
+                  isActive
+                    ? isBuy
+                      ? "text-terminal-buy border-terminal-buy glow-buy"
+                      : "text-terminal-accent border-terminal-accent glow-accent"
+                    : "text-terminal-dim border-transparent hover:text-terminal-text"
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {activePage === "markets" ? (
+      {/* Page content */}
+      {activePage === "home" ? (
+        <HomePage
+          signals={signals}
+          prices={prices}
+          onNavigate={setActivePage}
+          userName={user.name}
+        />
+      ) : activePage === "worldmap" ? (
+        <div className="max-w-screen-2xl mx-auto">
+          <WorldMapPage signals={signals} />
+        </div>
+      ) : activePage === "markets" ? (
         <div className="max-w-screen-2xl mx-auto">
           <MarketsPage signals={signals} onRefresh={refresh} />
+        </div>
+      ) : activePage === "watchlist" ? (
+        <div className="max-w-screen-2xl mx-auto">
+          <WatchlistPage />
+        </div>
+      ) : activePage === "bot" ? (
+        <div className="max-w-screen-2xl mx-auto">
+          <BotPage />
         </div>
       ) : activePage === "admin" ? (
         <div className="max-w-screen-2xl mx-auto">
@@ -166,6 +201,21 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
       )}
 
       {showRegister && <RegisterModal onClose={() => setShowRegister(false)} />}
+      <CookieConsent />
+
+      {/* Footer */}
+      <footer className="border-t border-terminal-border/30 mt-8 py-4 px-6 space-y-2 text-xs text-terminal-dim">
+        <p className="text-terminal-dim/70 leading-relaxed text-center max-w-3xl mx-auto">
+          <span className="text-yellow-400/80 font-bold">DISCLAIMER:</span> GeoTrader provides algorithmic market signals for informational purposes only. Nothing on this platform constitutes financial advice or a recommendation to buy or sell any financial instrument. Trading involves significant risk of loss. Always consult a qualified financial adviser before making investment decisions.
+        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span>© {new Date().getFullYear()} <span className="text-terminal-accent">GeoTrader</span> — Kavi Godithi. All Rights Reserved.</span>
+          <div className="flex gap-3">
+            <a href="/terms" className="hover:text-terminal-accent transition-colors">Terms of Service</a>
+            <a href="/privacy" className="hover:text-terminal-accent transition-colors">Privacy Policy</a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

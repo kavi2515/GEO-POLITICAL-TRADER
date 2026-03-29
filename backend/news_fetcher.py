@@ -30,10 +30,8 @@ RSS_FEEDS = [
     # Finance & markets
     {"name": "CNBC",              "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html"},
     {"name": "MarketWatch",       "url": "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines"},
-    {"name": "Financial Times",   "url": "https://www.ft.com/rss/home/uk"},
-    {"name": "Bloomberg Markets", "url": "https://feeds.bloomberg.com/markets/news.rss"},
     {"name": "Investing.com",     "url": "https://www.investing.com/rss/news.rss"},
-    {"name": "Seeking Alpha",     "url": "https://seekingalpha.com/market_currents.xml"},
+    {"name": "Yahoo Finance",     "url": "https://finance.yahoo.com/news/rssindex"},
     # Geopolitics & defence
     {"name": "Foreign Policy",    "url": "https://foreignpolicy.com/feed/"},
     {"name": "Defense News",      "url": "https://www.defensenews.com/arc/outboundfeeds/rss/?outputType=xml"},
