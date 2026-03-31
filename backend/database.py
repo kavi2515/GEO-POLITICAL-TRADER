@@ -99,10 +99,10 @@ class BotConfigDB(Base):
     enabled = Column(Boolean, default=False)
     starting_capital = Column(Float, default=100.0)
     available_cash = Column(Float, default=100.0)
-    min_signal_score = Column(Float, default=65.0)
+    min_signal_score = Column(Float, default=80.0)
     max_position_pct = Column(Float, default=20.0)
-    stop_loss_pct = Column(Float, default=5.0)
-    take_profit_pct = Column(Float, default=15.0)
+    stop_loss_pct = Column(Float, default=2.5)
+    take_profit_pct = Column(Float, default=25.0)
     max_positions = Column(Integer, default=5)
     updated_at = Column(DateTime, default=datetime.utcnow)
 

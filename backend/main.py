@@ -706,7 +706,10 @@ def bot_status(db: Session = Depends(get_db), current_user: UserDB = Depends(get
     for pos in positions:
         p = prices.get(pos.asset, {})
         current_price = p.get("price", pos.entry_price)
-        pnl_pct = (current_price - pos.entry_price) / pos.entry_price * 100 if pos.entry_price else 0
+        if pos.direction == "SELL":
+            pnl_pct = (pos.entry_price - current_price) / pos.entry_price * 100 if pos.entry_price else 0
+        else:
+            pnl_pct = (current_price - pos.entry_price) / pos.entry_price * 100 if pos.entry_price else 0
         pnl_usd = round(pos.quantity_usd * pnl_pct / 100, 4)
         current_value = round(pos.quantity_usd + pnl_usd, 4)
         position_value += current_value
@@ -715,6 +718,7 @@ def bot_status(db: Session = Depends(get_db), current_user: UserDB = Depends(get
             "asset":              pos.asset,
             "asset_label":        pos.asset_label,
             "category":           pos.category,
+            "direction":          pos.direction,
             "entry_price":        pos.entry_price,
             "current_price":      round(current_price, 6),
             "quantity_usd":       pos.quantity_usd,

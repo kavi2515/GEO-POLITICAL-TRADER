@@ -9,6 +9,7 @@ interface Position {
   asset: string;
   asset_label: string;
   category: string;
+  direction: string;
   entry_price: number;
   current_price: number;
   quantity_usd: number;
@@ -59,6 +60,7 @@ function authHeaders() {
 
 const ACTION_COLOR: Record<string, string> = {
   BUY:          "text-terminal-buy border-terminal-buy/30 bg-terminal-buy/10",
+  SELL:         "text-terminal-sell border-terminal-sell/30 bg-terminal-sell/10",
   STOP_LOSS:    "text-red-400 border-red-400/30 bg-red-400/10",
   TAKE_PROFIT:  "text-terminal-accent border-terminal-accent/30 bg-terminal-accent/10",
   SIGNAL_EXIT:  "text-orange-400 border-orange-400/30 bg-orange-400/10",
@@ -214,7 +216,12 @@ export default function BotPage() {
               {status.positions.map(pos => (
                 <div key={pos.id} className="grid grid-cols-12 gap-2 px-4 py-3 text-xs border-b border-terminal-border/20 hover:bg-terminal-card/30 transition-colors">
                   <div className="col-span-3">
-                    <div className="text-terminal-text font-semibold">{pos.asset_label}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[9px] px-1 py-0.5 rounded font-bold border ${pos.direction === "SELL" ? "text-terminal-sell border-terminal-sell/40 bg-terminal-sell/10" : "text-terminal-buy border-terminal-buy/40 bg-terminal-buy/10"}`}>
+                        {pos.direction === "SELL" ? "SHORT" : "LONG"}
+                      </span>
+                      <span className="text-terminal-text font-semibold">{pos.asset_label}</span>
+                    </div>
                     <div className="text-terminal-dim opacity-60 text-xs">{pos.asset}</div>
                   </div>
                   <div className="col-span-2 text-right font-mono text-terminal-dim">${pos.entry_price < 1 ? pos.entry_price.toFixed(6) : pos.entry_price.toFixed(2)}</div>

@@ -1,9 +1,10 @@
 """
-GeoTrader AI Bot Engine
-- Reads live geopolitical signals from the DB
-- Scores each asset using confidence, severity, recency, and signal volume
-- Opens/closes virtual positions based on configurable thresholds
-- Runs every 15 minutes via the background task in main.py
+GeoTrader AI Bot Engine — Aggressive Mode
+- Higher min signal score (80+)
+- Tighter stop-loss (2.5%)
+- Higher take-profit (25%)
+- SHORT selling on strong bearish signals
+- Steeper recency decay + signal volume weighting
 """
 import logging
 from datetime import datetime, timedelta
@@ -15,7 +16,7 @@ from price_fetcher import fetch_prices
 
 logger = logging.getLogger(__name__)
 
-SEVERITY_MULT = {"CRITICAL": 1.5, "HIGH": 1.2, "MEDIUM": 1.0, "LOW": 0.7}
+SEVERITY_MULT = {"CRITICAL": 2.0, "HIGH": 1.5, "MEDIUM": 1.0, "LOW": 0.5}
 
 
 # ---------------------------------------------------------------------------
@@ -25,7 +26,12 @@ SEVERITY_MULT = {"CRITICAL": 1.5, "HIGH": 1.2, "MEDIUM": 1.0, "LOW": 0.7}
 def get_or_create_config(db) -> BotConfigDB:
     config = db.query(BotConfigDB).first()
     if not config:
-        config = BotConfigDB(id=1)
+        config = BotConfigDB(
+            id=1,
+            min_signal_score=80.0,
+            stop_loss_pct=2.5,
+            take_profit_pct=25.0,
+        )
         db.add(config)
         db.commit()
         db.refresh(config)
@@ -33,14 +39,15 @@ def get_or_create_config(db) -> BotConfigDB:
 
 
 # ---------------------------------------------------------------------------
-# Scoring
+# Scoring — steeper recency decay + volume weighting
 # ---------------------------------------------------------------------------
 
 def compute_asset_score(asset: str, signals: list, now: datetime) -> tuple[float, str]:
     """
     Returns (score, top_reasoning).
-    Positive score = bullish, negative = bearish.
-    Scale: roughly -100 to +100.
+    Positive = bullish, negative = bearish.
+    Steeper recency decay: signals older than 6h carry little weight.
+    Volume bonus: more corroborating signals amplify the score.
     """
     weighted_scores = []
     reasonings = []
@@ -54,15 +61,18 @@ def compute_asset_score(asset: str, signals: list, now: datetime) -> tuple[float
             direction  = 1.0 if ms.get("signal") == "BUY" else -1.0
             sev_mult   = SEVERITY_MULT.get(sig.severity, 1.0)
 
+            # Steeper recency decay — stale signals barely count
             age_hours = (now - sig.created_at).total_seconds() / 3600
-            if age_hours < 2:
+            if age_hours < 1:
                 recency = 1.0
+            elif age_hours < 3:
+                recency = 0.7
             elif age_hours < 6:
-                recency = 0.8
-            elif age_hours < 12:
-                recency = 0.6
-            else:
                 recency = 0.4
+            elif age_hours < 12:
+                recency = 0.15
+            else:
+                recency = 0.05
 
             score = confidence * direction * sev_mult * recency
             weighted_scores.append(score)
@@ -75,17 +85,29 @@ def compute_asset_score(asset: str, signals: list, now: datetime) -> tuple[float
     if not weighted_scores:
         return 0.0, ""
 
-    final = sum(weighted_scores) / len(weighted_scores)
-    return round(final, 2), reasonings[0] if reasonings else ""
+    # Volume multiplier: more signals = higher conviction (up to 1.5x)
+    volume_mult = min(1.0 + (len(weighted_scores) - 1) * 0.1, 1.5)
+    raw = sum(weighted_scores) / len(weighted_scores)
+    final = round(raw * volume_mult, 2)
+
+    # Sort reasonings by absolute score contribution
+    best_reasoning = reasonings[0] if reasonings else ""
+    return final, best_reasoning
 
 
 def _asset_meta(asset: str, signals: list) -> tuple[str, str]:
-    """Return (asset_label, category) from the most recent signal mentioning this asset."""
     for sig in signals:
         for ms in (sig.market_signals or []):
             if ms.get("asset") == asset:
                 return ms.get("asset_label", asset), ms.get("category", "Unknown")
     return asset, "Unknown"
+
+
+def _pnl_pct(pos: BotPositionDB, current_price: float) -> float:
+    """P&L % accounting for direction (BUY profits on up, SELL profits on down)."""
+    if pos.direction == "SELL":
+        return (pos.entry_price - current_price) / pos.entry_price * 100
+    return (current_price - pos.entry_price) / pos.entry_price * 100
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +121,7 @@ def run_bot_cycle():
         if not config.enabled:
             return
 
-        now    = datetime.utcnow()
+        now = datetime.utcnow()
         logger.info("BOT | ── cycle start ──  cash=$%.2f", config.available_cash)
 
         prices = fetch_prices()
@@ -107,7 +129,8 @@ def run_bot_cycle():
             logger.warning("BOT | No prices available — skipping cycle")
             return
 
-        cutoff  = now - timedelta(hours=24)
+        # Use 12h window — with steeper decay, older signals barely affect score
+        cutoff  = now - timedelta(hours=12)
         signals = db.query(SignalDB).filter(SignalDB.created_at >= cutoff).all()
 
         # ── 1. Check exits on open positions ──────────────────────────────
@@ -118,25 +141,31 @@ def run_bot_cycle():
                 continue
 
             current_price = price_data["price"]
-            pnl_pct = (current_price - pos.entry_price) / pos.entry_price * 100
+            pnl_pct = _pnl_pct(pos, current_price)
             pnl_usd = round(pos.quantity_usd * pnl_pct / 100, 4)
 
-            exit_action  = None
-            exit_reason  = ""
+            exit_action = None
+            exit_reason = ""
 
+            # Tighter stop-loss — cut losers fast
             if pnl_pct <= -config.stop_loss_pct:
                 exit_action = "STOP_LOSS"
-                exit_reason = f"Stop-loss at {pnl_pct:.1f}% loss (entry ${pos.entry_price:.4f} → now ${current_price:.4f})"
+                exit_reason = f"Stop-loss at {pnl_pct:.1f}% ({pos.direction} entry ${pos.entry_price:.4f} → ${current_price:.4f})"
 
             elif pnl_pct >= config.take_profit_pct:
                 exit_action = "TAKE_PROFIT"
-                exit_reason = f"Take-profit at +{pnl_pct:.1f}% gain (entry ${pos.entry_price:.4f} → now ${current_price:.4f})"
+                exit_reason = f"Take-profit at +{pnl_pct:.1f}% ({pos.direction} entry ${pos.entry_price:.4f} → ${current_price:.4f})"
 
             else:
                 score, _ = compute_asset_score(pos.asset, signals, now)
-                if score < -50:
+                # Exit BUY if signal flips strongly bearish
+                if pos.direction == "BUY" and score < -config.min_signal_score * 0.5:
                     exit_action = "SIGNAL_EXIT"
-                    exit_reason = f"Signal reversed strongly bearish (score {score:.0f})"
+                    exit_reason = f"Signal reversed bearish (score {score:.0f})"
+                # Exit SELL if signal flips strongly bullish
+                elif pos.direction == "SELL" and score > config.min_signal_score * 0.5:
+                    exit_action = "SIGNAL_EXIT"
+                    exit_reason = f"Signal reversed bullish (score {score:.0f})"
 
             if exit_action:
                 config.available_cash = round(config.available_cash + pos.quantity_usd + pnl_usd, 4)
@@ -152,16 +181,18 @@ def run_bot_cycle():
                     pnl          = pnl_usd,
                 ))
                 db.delete(pos)
-                logger.info("BOT | EXIT %-12s %-12s P&L=$%+.2f  %s", exit_action, pos.asset, pnl_usd, exit_reason[:60])
+                logger.info("BOT | EXIT %-12s %-12s  dir=%-4s  P&L=$%+.2f  %s",
+                            exit_action, pos.asset, pos.direction, pnl_usd, exit_reason[:60])
 
         db.commit()
 
-        # ── 2. Check entries ───────────────────────────────────────────────
-        open_assets     = {p.asset for p in db.query(BotPositionDB).all()}
-        position_count  = len(open_assets)
+        # ── 2. Check entries — BUY and SHORT ──────────────────────────────
+        open_assets    = {p.asset: p.direction for p in db.query(BotPositionDB).all()}
+        position_count = len(open_assets)
 
         if position_count >= config.max_positions:
             logger.info("BOT | Max positions (%d) reached — no new entries", config.max_positions)
+            logger.info("BOT | ── cycle end ──  cash=$%.2f  positions=%d", config.available_cash, position_count)
             return
 
         if config.available_cash < 5.0:
@@ -172,22 +203,40 @@ def run_bot_cycle():
         asset_set: set[str] = set()
         for sig in signals:
             for ms in (sig.market_signals or []):
-                asset_set.add(ms.get("asset"))
+                if ms.get("asset"):
+                    asset_set.add(ms["asset"])
 
         # Score each candidate
-        candidates = []
+        long_candidates  = []   # strong bullish
+        short_candidates = []   # strong bearish
+
         for asset in asset_set:
             if asset in open_assets:
                 continue
             if asset not in prices:
                 continue
             score, reasoning = compute_asset_score(asset, signals, now)
+
             if score >= config.min_signal_score:
-                candidates.append((asset, score, reasoning))
+                long_candidates.append((asset, score, reasoning))
+            elif score <= -config.min_signal_score:
+                short_candidates.append((asset, abs(score), reasoning))
 
-        candidates.sort(key=lambda x: x[1], reverse=True)
+        long_candidates.sort(key=lambda x: x[1], reverse=True)
+        short_candidates.sort(key=lambda x: x[1], reverse=True)
 
-        for asset, score, reasoning in candidates:
+        # Interleave longs and shorts — take best from each alternately
+        entries = []
+        i, j = 0, 0
+        while i < len(long_candidates) or j < len(short_candidates):
+            if i < len(long_candidates):
+                entries.append(("BUY",  *long_candidates[i]))
+                i += 1
+            if j < len(short_candidates):
+                entries.append(("SELL", *short_candidates[j]))
+                j += 1
+
+        for direction, asset, score, reasoning in entries:
             if position_count >= config.max_positions:
                 break
             if config.available_cash < 5.0:
@@ -198,10 +247,9 @@ def run_bot_cycle():
             if current_price <= 0:
                 continue
 
-            # Size: proportional to score, capped at max_position_pct of total capital
-            max_pos_usd  = (config.starting_capital * config.max_position_pct / 100)
+            max_pos_usd  = config.starting_capital * config.max_position_pct / 100
             position_usd = min(
-                round(config.available_cash * (score / 100) * 0.4, 2),
+                round(config.available_cash * (score / 100) * 0.5, 2),
                 max_pos_usd,
                 config.available_cash,
             )
@@ -211,46 +259,53 @@ def run_bot_cycle():
 
             asset_label, category = _asset_meta(asset, signals)
 
+            # Stop/take prices depend on direction
+            if direction == "BUY":
+                sl_price = round(current_price * (1 - config.stop_loss_pct / 100), 6)
+                tp_price = round(current_price * (1 + config.take_profit_pct / 100), 6)
+            else:
+                sl_price = round(current_price * (1 + config.stop_loss_pct / 100), 6)
+                tp_price = round(current_price * (1 - config.take_profit_pct / 100), 6)
+
             config.available_cash = round(config.available_cash - position_usd, 4)
             db.add(BotPositionDB(
                 asset               = asset,
                 asset_label         = asset_label,
                 category            = category,
-                direction           = "BUY",
+                direction           = direction,
                 entry_price         = current_price,
                 quantity_usd        = position_usd,
-                entry_signal_score  = score,
+                entry_signal_score  = score if direction == "BUY" else -score,
                 entry_reasoning     = reasoning,
-                stop_loss_price     = round(current_price * (1 - config.stop_loss_pct / 100), 6),
-                take_profit_price   = round(current_price * (1 + config.take_profit_pct / 100), 6),
+                stop_loss_price     = sl_price,
+                take_profit_price   = tp_price,
             ))
             db.add(BotTradeDB(
                 asset        = asset,
                 asset_label  = asset_label,
                 category     = category,
-                action       = "BUY",
+                action       = direction,
                 price        = current_price,
                 quantity_usd = position_usd,
-                signal_score = score,
+                signal_score = score if direction == "BUY" else -score,
                 reasoning    = reasoning,
                 pnl          = None,
             ))
             position_count += 1
-            logger.info("BOT | BUY  %-12s $%.2f @ %.4f  score=%.0f", asset, position_usd, current_price, score)
+            logger.info("BOT | %-4s %-12s $%.2f @ %.4f  score=%.0f",
+                        direction, asset, position_usd, current_price, score)
 
         db.commit()
 
-        positions_now = db.query(BotPositionDB).all()
+        positions_now  = db.query(BotPositionDB).all()
         position_value = sum(
-            pos.quantity_usd * (prices[pos.asset]["price"] / pos.entry_price)
+            pos.quantity_usd * (1 + _pnl_pct(pos, prices[pos.asset]["price"]) / 100)
             for pos in positions_now
             if pos.asset in prices
         )
         total_value = round(config.available_cash + position_value, 2)
-        logger.info(
-            "BOT | ── cycle end ──  cash=$%.2f  positions=%d  total=$%.2f",
-            config.available_cash, len(positions_now), total_value,
-        )
+        logger.info("BOT | ── cycle end ──  cash=$%.2f  positions=%d  total=$%.2f",
+                    config.available_cash, len(positions_now), total_value)
 
     except Exception as e:
         logger.error("BOT | Cycle error: %s", e, exc_info=True)
