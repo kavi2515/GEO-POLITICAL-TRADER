@@ -3,6 +3,7 @@ import { TrendingUp, TrendingDown, RefreshCw, Activity, ChevronRight } from "luc
 import { usePrices } from "../hooks/usePrices";
 import type { SignalItem } from "../types";
 import StockDetailModal, { type StockDetailAsset } from "../components/StockDetailModal";
+import { ASSET_CATALOGUE } from "../lib/assetCatalogue";
 
 interface Props {
   signals: SignalItem[];
@@ -31,37 +32,61 @@ const CATEGORY_COLOR: Record<string, string> = {
   "Fixed Income": "text-pink-400 border-pink-400/30 bg-pink-400/10",
 };
 
-function buildMarketAssets(signals: SignalItem[]): MarketAsset[] {
-  const map = new Map<string, { label: string; category: string; buy: number[]; sell: number[] }>();
+function buildMarketAssets(signals: SignalItem[], priceKeys: string[]): MarketAsset[] {
+  // Build signal map from recent news signals
+  const signalMap = new Map<string, { label: string; category: string; buy: number[]; sell: number[] }>();
 
   for (const signal of signals) {
     for (const ms of signal.market_signals) {
-      if (!map.has(ms.asset)) {
-        map.set(ms.asset, { label: ms.asset_label, category: ms.category, buy: [], sell: [] });
+      if (!signalMap.has(ms.asset)) {
+        signalMap.set(ms.asset, { label: ms.asset_label, category: ms.category, buy: [], sell: [] });
       }
-      const entry = map.get(ms.asset)!;
+      const entry = signalMap.get(ms.asset)!;
       if (ms.signal === "BUY") entry.buy.push(ms.confidence);
       else entry.sell.push(ms.confidence);
     }
   }
 
+  // Build full asset list from all priced assets + catalogue
+  const allAssetKeys = new Set([...priceKeys, ...Object.keys(ASSET_CATALOGUE)]);
   const assets: MarketAsset[] = [];
-  for (const [asset, data] of map.entries()) {
-    const buyAvg = data.buy.length ? data.buy.reduce((a, b) => a + b, 0) / data.buy.length : 0;
-    const sellAvg = data.sell.length ? data.sell.reduce((a, b) => a + b, 0) / data.sell.length : 0;
-    const totalCount = data.buy.length + data.sell.length;
 
+  for (const asset of allAssetKeys) {
+    const meta = ASSET_CATALOGUE[asset];
+    if (!meta) continue;
+
+    const data = signalMap.get(asset);
     let signal: "BUY" | "SELL" | "NEUTRAL" = "NEUTRAL";
     let confidence = 0;
-    if (data.buy.length > data.sell.length) { signal = "BUY"; confidence = Math.round(buyAvg); }
-    else if (data.sell.length > data.buy.length) { signal = "SELL"; confidence = Math.round(sellAvg); }
-    else if (buyAvg >= sellAvg) { signal = "BUY"; confidence = Math.round(buyAvg); }
-    else { signal = "SELL"; confidence = Math.round(sellAvg); }
+    let signalCount = 0;
 
-    assets.push({ asset, asset_label: data.label, category: data.category, signal, confidence, signalCount: totalCount });
+    if (data) {
+      const buyAvg = data.buy.length ? data.buy.reduce((a, b) => a + b, 0) / data.buy.length : 0;
+      const sellAvg = data.sell.length ? data.sell.reduce((a, b) => a + b, 0) / data.sell.length : 0;
+      signalCount = data.buy.length + data.sell.length;
+
+      if (data.buy.length > data.sell.length) { signal = "BUY"; confidence = Math.round(buyAvg); }
+      else if (data.sell.length > data.buy.length) { signal = "SELL"; confidence = Math.round(sellAvg); }
+      else if (buyAvg >= sellAvg && buyAvg > 0) { signal = "BUY"; confidence = Math.round(buyAvg); }
+      else if (sellAvg > 0) { signal = "SELL"; confidence = Math.round(sellAvg); }
+    }
+
+    assets.push({
+      asset,
+      asset_label: data?.label ?? meta.label,
+      category: meta.category,
+      signal,
+      confidence,
+      signalCount,
+    });
   }
 
-  return assets.sort((a, b) => b.confidence - a.confidence);
+  // Sort: assets with signals first (by confidence), then alphabetically
+  return assets.sort((a, b) => {
+    if (b.signalCount !== a.signalCount) return b.signalCount - a.signalCount;
+    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    return a.asset_label.localeCompare(b.asset_label);
+  });
 }
 
 function buildDetailAsset(asset: MarketAsset, signals: SignalItem[]): StockDetailAsset {
@@ -100,11 +125,11 @@ export default function MarketsPage({ signals, onRefresh }: Props) {
   const [selected, setSelected] = useState<StockDetailAsset | null>(null);
   const [selectedPrice, setSelectedPrice] = useState<ReturnType<typeof usePrices>["prices"][string] | undefined>();
 
-  const allAssets = buildMarketAssets(signals);
+  const allAssets = buildMarketAssets(signals, Object.keys(prices));
   const filtered = allAssets.filter(a =>
     KNOWN_CATEGORIES.has(a.category) &&
     (activeCategory === "All" || a.category === activeCategory) &&
-    (search === "" || a.asset_label.toLowerCase().includes(search.toLowerCase()))
+    (search === "" || a.asset_label.toLowerCase().includes(search.toLowerCase()) || a.asset.toLowerCase().includes(search.toLowerCase()))
   );
 
   useEffect(() => {
