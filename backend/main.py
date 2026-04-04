@@ -890,6 +890,119 @@ def get_watchlist_signals(db: Session = Depends(get_db), current_user: UserDB = 
     return results
 
 
+@app.get("/api/signals/history")
+def get_signal_history(
+    days: int = 30,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user),
+):
+    """Return past signals with 24h price outcome (CORRECT/WRONG/PENDING)."""
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    signals = (
+        db.query(SignalDB)
+        .filter(SignalDB.created_at >= cutoff)
+        .order_by(SignalDB.created_at.desc())
+        .limit(500)
+        .all()
+    )
+
+    # Collect unique assets
+    asset_set: set[str] = set()
+    for sig in signals:
+        for ms in (sig.market_signals or []):
+            if ms.get("asset"):
+                asset_set.add(ms["asset"])
+
+    # Fetch price history for each asset once
+    price_history: dict[str, dict[str, float]] = {}
+    for asset in asset_set:
+        try:
+            hist = fetch_history(asset, days=max(days + 5, 35))
+            if hist:
+                price_history[asset] = {row["date"]: row["close"] for row in hist}
+        except Exception:
+            pass
+
+    def nearest_price(asset: str, from_dt: datetime, offset_days: int) -> float | None:
+        ah = price_history.get(asset, {})
+        for d in range(offset_days, offset_days + 5):
+            date_str = (from_dt + timedelta(days=d)).strftime("%Y-%m-%d")
+            if date_str in ah:
+                return ah[date_str]
+        return None
+
+    results = []
+    now = datetime.utcnow()
+
+    for sig in signals:
+        sig_dt = sig.created_at
+        for ms in (sig.market_signals or []):
+            asset = ms.get("asset")
+            if not asset:
+                continue
+
+            direction = ms.get("signal")  # BUY or SELL
+            confidence = ms.get("confidence", 0)
+
+            entry_price = nearest_price(asset, sig_dt, 0)
+            exit_price = nearest_price(asset, sig_dt, 1)
+
+            is_pending = (now - sig_dt).total_seconds() < 86400 or exit_price is None
+
+            if not is_pending and entry_price and exit_price and entry_price > 0:
+                pct_change = (exit_price - entry_price) / entry_price * 100
+                if direction == "BUY":
+                    outcome = "CORRECT" if pct_change > 0 else "WRONG"
+                elif direction == "SELL":
+                    outcome = "CORRECT" if pct_change < 0 else "WRONG"
+                else:
+                    outcome = "PENDING"
+            else:
+                pct_change = None
+                outcome = "PENDING"
+
+            results.append({
+                "signal_id": sig.id,
+                "date": sig_dt.isoformat(),
+                "news_title": sig.news_title,
+                "news_url": sig.news_url,
+                "severity": sig.severity,
+                "asset": asset,
+                "asset_label": ms.get("asset_label", asset),
+                "category": ms.get("category", ""),
+                "direction": direction,
+                "confidence": confidence,
+                "entry_price": round(entry_price, 4) if entry_price else None,
+                "exit_price": round(exit_price, 4) if exit_price else None,
+                "pct_change": round(pct_change, 2) if pct_change is not None else None,
+                "outcome": outcome,
+            })
+
+    # Accuracy stats
+    resolved = [r for r in results if r["outcome"] in ("CORRECT", "WRONG")]
+    correct = [r for r in resolved if r["outcome"] == "CORRECT"]
+    buy_res = [r for r in resolved if r["direction"] == "BUY"]
+    buy_ok = [r for r in buy_res if r["outcome"] == "CORRECT"]
+    sell_res = [r for r in resolved if r["direction"] == "SELL"]
+    sell_ok = [r for r in sell_res if r["outcome"] == "CORRECT"]
+
+    def pct(a, b):
+        return round(len(a) / len(b) * 100, 1) if b else None
+
+    return {
+        "signals": results[:300],
+        "stats": {
+            "total_tracked": len(resolved),
+            "total_pending": len([r for r in results if r["outcome"] == "PENDING"]),
+            "overall_accuracy": pct(correct, resolved),
+            "buy_accuracy": pct(buy_ok, buy_res),
+            "sell_accuracy": pct(sell_ok, sell_res),
+            "total_buy": len(buy_res),
+            "total_sell": len(sell_res),
+        },
+    }
+
+
 @app.get("/api/prices")
 def get_prices(current_user: UserDB = Depends(get_current_user)):
     try:

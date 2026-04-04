@@ -18,6 +18,7 @@ import StocksPage from "./pages/StocksPage";
 import TermsPage from "./pages/TermsPage";
 import WatchlistPage from "./pages/WatchlistPage";
 import WorldMapPage from "./pages/WorldMapPage";
+import SignalHistoryPage from "./pages/SignalHistoryPage";
 import { useSignals } from "./hooks/useSignals";
 import { usePrices } from "./hooks/usePrices";
 import type { Filters } from "./types";
@@ -30,7 +31,7 @@ const DEFAULT_FILTERS: Filters = {
   hours:            24,
 };
 
-type Page = "home" | "news" | "stocks" | "markets" | "portfolio" | "worldmap" | "watchlist" | "admin" | "bot";
+type Page = "home" | "news" | "stocks" | "markets" | "portfolio" | "worldmap" | "watchlist" | "history" | "admin" | "bot";
 
 export default function App() {
   const path = window.location.pathname;
@@ -75,6 +76,7 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
     { id: "portfolio", label: "◉ PORTFOLIO" },
     { id: "worldmap",  label: "⬡ WORLD MAP" },
     { id: "watchlist", label: "★ WATCHLIST" },
+    { id: "history",   label: "◷ SIGNAL HISTORY" },
     { id: "bot",       label: "⚡ AI BOT", adminOnly: true },
     { id: "admin",     label: "⬡ ADMIN", adminOnly: true },
   ];
@@ -157,6 +159,10 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
       ) : activePage === "watchlist" ? (
         <div className="max-w-screen-2xl mx-auto">
           <WatchlistPage />
+        </div>
+      ) : activePage === "history" ? (
+        <div className="max-w-screen-2xl mx-auto">
+          <SignalHistoryPage />
         </div>
       ) : activePage === "bot" ? (
         <div className="max-w-screen-2xl mx-auto">
