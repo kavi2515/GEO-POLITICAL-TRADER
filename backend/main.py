@@ -23,11 +23,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import (
-    BotConfigDB, BotPositionDB, BotTradeDB,
+    BotConfigDB, BotPositionDB, BotTradeDB, PreMarketPickDB,
     NewsItemDB, PasswordResetTokenDB, PortfolioDB, SignalDB, SubscriberDB, UserDB,
     WatchlistDB, create_tables, get_db,
 )
-from bot_engine import run_bot_cycle, get_or_create_config
+from bot_engine import run_bot_cycle, run_premarket_analysis, get_or_create_config, is_aggressive_window, is_premarket_time
 from auth import create_access_token, get_admin_user, get_current_user, hash_password, verify_password
 from ml_engine import SignalEngine
 from news_fetcher import fetch_all_feeds
@@ -194,6 +194,8 @@ Market Signals:
 async def background_loop():
     from database import SessionLocal
     bot_tick = 0
+    premarket_done_today = ""  # tracks date so we only run once per day
+
     while True:
         db = SessionLocal()
         try:
@@ -203,16 +205,29 @@ async def background_loop():
         finally:
             db.close()
 
-        # Run bot every 3 cycles (~15 min)
+        from datetime import datetime as _dt
+        today_str = _dt.utcnow().strftime("%Y-%m-%d")
+
+        # Run pre-market analysis once at 9 AM EST (13:00 UTC)
+        if is_premarket_time() and premarket_done_today != today_str:
+            premarket_done_today = today_str
+            try:
+                run_premarket_analysis()
+            except Exception as exc:
+                logger.error("Pre-market analysis error: %s", exc)
+
+        # During aggressive window (9:30–11 AM EST): run bot every cycle (5 min)
+        # Otherwise: run bot every 3rd cycle (~15 min)
         bot_tick += 1
-        if bot_tick >= 3:
-            bot_tick = 0
+        if is_aggressive_window() or bot_tick >= 3:
+            if bot_tick >= 3:
+                bot_tick = 0
             try:
                 run_bot_cycle()
             except Exception as exc:
                 logger.error("Bot cycle error: %s", exc)
 
-        await asyncio.sleep(300)  # 5 minutes per cycle
+        await asyncio.sleep(300)  # 5 minutes per loop
 
 
 # ---------------------------------------------------------------------------
@@ -820,6 +835,63 @@ def bot_run_now(db: Session = Depends(get_db), current_user: UserDB = Depends(ge
     except Exception as e:
         logger.error("Bot run error: %s", e)
         raise HTTPException(status_code=500, detail="Bot cycle failed")
+
+
+@app.post("/api/bot/premarket/run")
+def run_premarket_now(current_user: UserDB = Depends(get_admin_user)):
+    """Manually trigger pre-market analysis (useful for testing outside market hours)."""
+    try:
+        # Clear today's picks so it re-runs
+        db_local = next(get_db())
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        db_local.query(PreMarketPickDB).filter_by(date=today).delete()
+        db_local.commit()
+        db_local.close()
+        run_premarket_analysis()
+        return {"message": "Pre-market analysis completed"}
+    except Exception as e:
+        logger.error("Pre-market run error: %s", e)
+        raise HTTPException(status_code=500, detail="Pre-market analysis failed")
+
+
+@app.get("/api/bot/premarket")
+def get_premarket_picks(db: Session = Depends(get_db), current_user: UserDB = Depends(get_admin_user)):
+    """Return today's pre-market picks with mismatch scores."""
+    from price_fetcher import fetch_prices as _fetch_prices
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    picks = db.query(PreMarketPickDB).filter_by(date=today).order_by(
+        PreMarketPickDB.mismatch_score.desc()
+    ).all()
+
+    prices = _fetch_prices()
+
+    result = []
+    for p in picks:
+        price_now = prices.get(p.asset, {}).get("price")
+        price_change = None
+        if price_now and p.price_at_analysis:
+            price_change = round((price_now - p.price_at_analysis) / p.price_at_analysis * 100, 2)
+        result.append({
+            "id": p.id,
+            "asset": p.asset,
+            "asset_label": p.asset_label,
+            "category": p.category,
+            "direction": p.direction,
+            "signal_score": p.signal_score,
+            "mismatch_score": p.mismatch_score,
+            "price_at_analysis": p.price_at_analysis,
+            "price_now": price_now,
+            "price_change_since": price_change,
+            "reasoning": p.reasoning,
+            "acted_on": p.acted_on,
+            "created_at": p.created_at.isoformat(),
+        })
+
+    return {
+        "date": today,
+        "picks": result,
+        "market_open": is_aggressive_window(),
+    }
 
 
 # ---------------------------------------------------------------------------

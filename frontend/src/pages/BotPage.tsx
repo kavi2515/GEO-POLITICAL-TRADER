@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   TrendingUp, TrendingDown, Activity, PlayCircle, StopCircle,
-  RefreshCw, Zap, DollarSign, BarChart2, Clock,
+  RefreshCw, Zap, DollarSign, BarChart2, Clock, Target, Crosshair,
 } from "lucide-react";
 
 interface Position {
@@ -41,6 +41,27 @@ interface BotStatus {
   };
 }
 
+interface PreMarketPick {
+  id: string;
+  asset: string;
+  asset_label: string;
+  category: string;
+  direction: string;
+  signal_score: number;
+  mismatch_score: number;
+  price_at_analysis: number;
+  price_now: number | null;
+  price_change_since: number | null;
+  reasoning: string;
+  acted_on: boolean;
+}
+
+interface PreMarketData {
+  date: string;
+  picks: PreMarketPick[];
+  market_open: boolean;
+}
+
 interface Trade {
   id: string;
   asset: string;
@@ -67,10 +88,12 @@ const ACTION_COLOR: Record<string, string> = {
 };
 
 export default function BotPage() {
-  const [status, setStatus]   = useState<BotStatus | null>(null);
-  const [trades, setTrades]   = useState<Trade[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState(false);
+  const [status, setStatus]       = useState<BotStatus | null>(null);
+  const [trades, setTrades]       = useState<Trade[]>([]);
+  const [premarket, setPremarket] = useState<PreMarketData | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [running, setRunning]     = useState(false);
+  const [scanRunning, setScanRunning] = useState(false);
 
   // Config edit state
   const [capital, setCapital]     = useState("");
@@ -82,12 +105,14 @@ export default function BotPage() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [s, t] = await Promise.all([
-        fetch("/api/bot/status",  { headers: authHeaders() }).then(r => r.json()),
-        fetch("/api/bot/trades",  { headers: authHeaders() }).then(r => r.json()),
+      const [s, t, pm] = await Promise.all([
+        fetch("/api/bot/status",    { headers: authHeaders() }).then(r => r.json()),
+        fetch("/api/bot/trades",    { headers: authHeaders() }).then(r => r.json()),
+        fetch("/api/bot/premarket", { headers: authHeaders() }).then(r => r.json()).catch(() => null),
       ]);
       setStatus(s);
       setTrades(t);
+      if (pm && pm.picks) setPremarket(pm);
       if (s.config) {
         setMinScore(String(s.config.min_signal_score));
         setMaxPos(String(s.config.max_position_pct));
@@ -131,6 +156,16 @@ export default function BotPage() {
     fetchAll();
   }
 
+  async function runScan() {
+    setScanRunning(true);
+    try {
+      await fetch("/api/bot/premarket/run", { method: "POST", headers: authHeaders() });
+      await fetchAll();
+    } finally {
+      setScanRunning(false);
+    }
+  }
+
   async function runNow() {
     setRunning(true);
     try {
@@ -166,6 +201,10 @@ export default function BotPage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={runScan} disabled={scanRunning}
+            className="flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300 border border-purple-400/40 hover:border-purple-300/40 hover:bg-purple-400/10 px-3 py-1.5 rounded transition-colors disabled:opacity-50">
+            {scanRunning ? <RefreshCw size={11} className="animate-spin" /> : <Crosshair size={11} />} SCAN MARKET
+          </button>
           <button onClick={runNow} disabled={running}
             className="flex items-center gap-1.5 text-xs text-terminal-dim hover:text-terminal-accent border border-terminal-border hover:border-terminal-accent/40 px-3 py-1.5 rounded transition-colors disabled:opacity-50">
             {running ? <RefreshCw size={11} className="animate-spin" /> : <RefreshCw size={11} />} RUN NOW
@@ -193,6 +232,102 @@ export default function BotPage() {
         <StatCard icon={<DollarSign size={14} />} label="CASH" value={`$${status.available_cash.toFixed(2)}`} color="text-terminal-accent" />
         <StatCard icon={<BarChart2 size={14} />} label="POSITIONS" value={`${status.positions.length} / ${status.config.max_positions}`} color="text-terminal-dim" />
       </div>
+
+      {/* Today's Edge — Pre-market mismatch picks */}
+      {premarket && (
+        <div className="border border-purple-400/30 rounded-lg bg-purple-400/5 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Target size={14} className="text-purple-400" />
+              <span className="text-purple-400 text-xs font-bold tracking-widest">TODAY'S EDGE — MARKET MISMATCH SCANNER</span>
+              {premarket.market_open && (
+                <span className="text-xs px-2 py-0.5 rounded border border-terminal-buy/40 text-terminal-buy bg-terminal-buy/10 animate-pulse font-bold">
+                  ● MARKET OPEN — 5-MIN CYCLES ACTIVE
+                </span>
+              )}
+            </div>
+            <span className="text-terminal-dim text-xs">{premarket.date} · {premarket.picks.length} picks</span>
+          </div>
+
+          {premarket.picks.length === 0 ? (
+            <div className="text-center py-4 text-terminal-dim text-xs">
+              No picks yet — click SCAN MARKET to run pre-market analysis
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-terminal-dim border-b border-purple-400/20">
+                    <th className="text-left py-1.5 px-2">ASSET</th>
+                    <th className="text-left py-1.5 px-2">DIR</th>
+                    <th className="text-right py-1.5 px-2">SIGNAL</th>
+                    <th className="text-right py-1.5 px-2">MISMATCH</th>
+                    <th className="text-right py-1.5 px-2">ENTRY PRICE</th>
+                    <th className="text-right py-1.5 px-2">NOW</th>
+                    <th className="text-right py-1.5 px-2">MOVE</th>
+                    <th className="text-center py-1.5 px-2">STATUS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {premarket.picks.map(pick => {
+                    const misCol = pick.mismatch_score >= 85
+                      ? "text-red-400" : pick.mismatch_score >= 70
+                      ? "text-orange-400" : pick.mismatch_score >= 55
+                      ? "text-yellow-400" : "text-terminal-dim";
+                    return (
+                      <tr key={pick.id} className="border-b border-purple-400/10 hover:bg-purple-400/5 transition-colors">
+                        <td className="py-2 px-2">
+                          <span className="text-terminal-text font-semibold">{pick.asset_label}</span>
+                          <span className="text-terminal-dim ml-1 opacity-60">({pick.category})</span>
+                        </td>
+                        <td className="py-2 px-2">
+                          <span className={`px-1.5 py-0.5 rounded border text-xs font-bold ${
+                            pick.direction === "BUY"
+                              ? "text-terminal-buy border-terminal-buy/40 bg-terminal-buy/10"
+                              : "text-terminal-sell border-terminal-sell/40 bg-terminal-sell/10"
+                          }`}>{pick.direction}</span>
+                        </td>
+                        <td className={`py-2 px-2 text-right font-mono font-bold ${pick.signal_score > 0 ? "text-terminal-buy" : "text-terminal-sell"}`}>
+                          {pick.signal_score > 0 ? "+" : ""}{pick.signal_score?.toFixed(1)}
+                        </td>
+                        <td className={`py-2 px-2 text-right font-mono font-bold ${misCol}`}>
+                          {pick.mismatch_score?.toFixed(0)}
+                          {pick.mismatch_score >= 85 && " 🔴"}
+                          {pick.mismatch_score >= 70 && pick.mismatch_score < 85 && " 🟠"}
+                          {pick.mismatch_score >= 55 && pick.mismatch_score < 70 && " 🟡"}
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono text-terminal-dim">
+                          ${pick.price_at_analysis < 1 ? pick.price_at_analysis?.toFixed(4) : pick.price_at_analysis?.toFixed(2)}
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono text-terminal-text">
+                          {pick.price_now ? `$${pick.price_now < 1 ? pick.price_now.toFixed(4) : pick.price_now.toFixed(2)}` : "—"}
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono">
+                          {pick.price_change_since != null ? (
+                            <span className={pick.price_change_since >= 0 ? "text-terminal-buy" : "text-terminal-sell"}>
+                              {pick.price_change_since >= 0 ? "+" : ""}{pick.price_change_since.toFixed(2)}%
+                            </span>
+                          ) : "—"}
+                        </td>
+                        <td className="py-2 px-2 text-center">
+                          {pick.acted_on ? (
+                            <span className="text-terminal-buy text-xs font-bold">✓ ENTERED</span>
+                          ) : (
+                            <span className="text-terminal-dim text-xs">WATCHING</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="text-terminal-dim/60 text-xs">
+            Mismatch score = signal strength × how little the market has priced it in. 🔴 85+ = huge edge, market asleep.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
 

@@ -151,6 +151,23 @@ class WatchlistDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class PreMarketPickDB(Base):
+    __tablename__ = "premarket_picks"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    date = Column(String, nullable=False)          # YYYY-MM-DD
+    asset = Column(String, nullable=False)
+    asset_label = Column(String)
+    category = Column(String)
+    direction = Column(String, nullable=False)     # BUY or SELL
+    signal_score = Column(Float)
+    mismatch_score = Column(Float)                 # 0–150, higher = bigger edge
+    price_at_analysis = Column(Float)
+    reasoning = Column(Text)
+    acted_on = Column(Boolean, default=False)      # True once bot enters this position
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class PasswordResetTokenDB(Base):
     __tablename__ = "password_reset_tokens"
 
