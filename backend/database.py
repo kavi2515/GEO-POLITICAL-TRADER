@@ -151,6 +151,66 @@ class WatchlistDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class SniperConfigDB(Base):
+    __tablename__ = "sniper_config"
+
+    id                   = Column(Integer, primary_key=True, default=1)
+    enabled              = Column(Boolean, default=False)
+    mismatch_threshold   = Column(Float, default=85.0)
+    min_signal_score     = Column(Float, default=90.0)
+    position_pct         = Column(Float, default=35.0)
+    max_sniper_positions = Column(Integer, default=2)
+    updated_at           = Column(DateTime, default=datetime.utcnow)
+
+
+class AssetBotConfigDB(Base):
+    __tablename__ = "asset_bot_config"
+
+    asset            = Column(String, primary_key=True)
+    asset_label      = Column(String, nullable=False)
+    category         = Column(String, nullable=False)
+    enabled          = Column(Boolean, default=True)
+    sniper_only      = Column(Boolean, default=False)
+    min_signal_score = Column(Float, nullable=True)
+    stop_loss_pct    = Column(Float, nullable=True)
+    take_profit_pct  = Column(Float, nullable=True)
+    max_position_pct = Column(Float, nullable=True)
+    updated_at       = Column(DateTime, default=datetime.utcnow)
+
+
+class GridBotDB(Base):
+    __tablename__ = "grid_bots"
+
+    id                = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    asset             = Column(String, nullable=False)
+    asset_label       = Column(String, nullable=False)
+    category          = Column(String, nullable=False)
+    enabled           = Column(Boolean, default=False)
+    base_price        = Column(Float, nullable=False)
+    grid_spacing_pct  = Column(Float, default=2.0)
+    num_levels        = Column(Integer, default=5)
+    capital_per_level = Column(Float, nullable=False)
+    total_pnl         = Column(Float, default=0.0)
+    created_at        = Column(DateTime, default=datetime.utcnow)
+    updated_at        = Column(DateTime, default=datetime.utcnow)
+
+
+class GridOrderDB(Base):
+    __tablename__ = "grid_orders"
+
+    id           = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    grid_bot_id  = Column(String, nullable=False)
+    asset        = Column(String, nullable=False)
+    level        = Column(Integer, nullable=False)
+    price        = Column(Float, nullable=False)
+    direction    = Column(String, nullable=False)
+    status       = Column(String, default="OPEN")
+    filled_price = Column(Float, nullable=True)
+    pnl          = Column(Float, nullable=True)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    filled_at    = Column(DateTime, nullable=True)
+
+
 class PreMarketPickDB(Base):
     __tablename__ = "premarket_picks"
 

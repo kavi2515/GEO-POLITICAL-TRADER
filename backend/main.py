@@ -23,11 +23,16 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import (
-    BotConfigDB, BotPositionDB, BotTradeDB, PreMarketPickDB,
+    AssetBotConfigDB, BotConfigDB, BotPositionDB, BotTradeDB,
+    GridBotDB, GridOrderDB, PreMarketPickDB,
     NewsItemDB, PasswordResetTokenDB, PortfolioDB, SignalDB, SubscriberDB, UserDB,
-    WatchlistDB, create_tables, get_db,
+    WatchlistDB, SniperConfigDB, create_tables, get_db,
 )
-from bot_engine import run_bot_cycle, run_premarket_analysis, get_or_create_config, is_aggressive_window, is_premarket_time
+from bot_engine import (
+    run_bot_cycle, run_sniper_cycle, run_grid_cycle,
+    run_premarket_analysis, get_or_create_config, get_or_create_sniper_config,
+    _initialize_grid_orders, is_aggressive_window, is_premarket_time,
+)
 from auth import create_access_token, get_admin_user, get_current_user, hash_password, verify_password
 from ml_engine import SignalEngine
 from news_fetcher import fetch_all_feeds
@@ -226,6 +231,14 @@ async def background_loop():
                 run_bot_cycle()
             except Exception as exc:
                 logger.error("Bot cycle error: %s", exc)
+            try:
+                run_sniper_cycle()
+            except Exception as exc:
+                logger.error("Sniper cycle error: %s", exc)
+            try:
+                run_grid_cycle()
+            except Exception as exc:
+                logger.error("Grid cycle error: %s", exc)
 
         await asyncio.sleep(300)  # 5 minutes per loop
 
@@ -258,6 +271,43 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Pydantic schemas
 # ---------------------------------------------------------------------------
+
+class SniperConfigUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    mismatch_threshold: Optional[float] = None
+    min_signal_score: Optional[float] = None
+    position_pct: Optional[float] = None
+    max_sniper_positions: Optional[int] = None
+
+
+class AssetBotConfigUpsert(BaseModel):
+    asset_label: str
+    category: str
+    enabled: Optional[bool] = True
+    sniper_only: Optional[bool] = False
+    min_signal_score: Optional[float] = None
+    stop_loss_pct: Optional[float] = None
+    take_profit_pct: Optional[float] = None
+    max_position_pct: Optional[float] = None
+
+
+class GridBotCreate(BaseModel):
+    asset: str
+    asset_label: str
+    category: str
+    base_price: float
+    grid_spacing_pct: float = 2.0
+    num_levels: int = 5
+    capital_per_level: float
+
+
+class GridBotUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    base_price: Optional[float] = None
+    grid_spacing_pct: Optional[float] = None
+    num_levels: Optional[int] = None
+    capital_per_level: Optional[float] = None
+
 
 class MarketSignal(BaseModel):
     asset: str
@@ -892,6 +942,181 @@ def get_premarket_picks(db: Session = Depends(get_db), current_user: UserDB = De
         "picks": result,
         "market_open": is_aggressive_window(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Sniper Bot API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/bot/sniper/config")
+def get_sniper_config(db: Session = Depends(get_db), _: UserDB = Depends(get_admin_user)):
+    cfg = get_or_create_sniper_config(db)
+    return {
+        "enabled": cfg.enabled,
+        "mismatch_threshold": cfg.mismatch_threshold,
+        "min_signal_score": cfg.min_signal_score,
+        "position_pct": cfg.position_pct,
+        "max_sniper_positions": cfg.max_sniper_positions,
+    }
+
+
+@app.patch("/api/bot/sniper/config")
+def update_sniper_config(req: SniperConfigUpdate, db: Session = Depends(get_db), _: UserDB = Depends(get_admin_user)):
+    cfg = get_or_create_sniper_config(db)
+    if req.enabled is not None:              cfg.enabled              = req.enabled
+    if req.mismatch_threshold is not None:   cfg.mismatch_threshold   = req.mismatch_threshold
+    if req.min_signal_score is not None:     cfg.min_signal_score     = req.min_signal_score
+    if req.position_pct is not None:         cfg.position_pct         = req.position_pct
+    if req.max_sniper_positions is not None: cfg.max_sniper_positions = req.max_sniper_positions
+    cfg.updated_at = datetime.utcnow()
+    db.commit()
+    return {"message": "Sniper config updated"}
+
+
+@app.post("/api/bot/sniper/run")
+def sniper_run_now(_: UserDB = Depends(get_admin_user)):
+    try:
+        run_sniper_cycle()
+        return {"message": "Sniper cycle completed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Sniper cycle failed")
+
+
+# ---------------------------------------------------------------------------
+# Per-Asset Bot Config API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/bot/assets")
+def list_asset_configs(db: Session = Depends(get_db), _: UserDB = Depends(get_admin_user)):
+    rows = db.query(AssetBotConfigDB).order_by(AssetBotConfigDB.asset).all()
+    return [
+        {
+            "asset": r.asset, "asset_label": r.asset_label, "category": r.category,
+            "enabled": r.enabled, "sniper_only": r.sniper_only,
+            "min_signal_score": r.min_signal_score, "stop_loss_pct": r.stop_loss_pct,
+            "take_profit_pct": r.take_profit_pct, "max_position_pct": r.max_position_pct,
+        }
+        for r in rows
+    ]
+
+
+@app.put("/api/bot/assets/{asset:path}")
+def upsert_asset_config(asset: str, req: AssetBotConfigUpsert, db: Session = Depends(get_db), _: UserDB = Depends(get_admin_user)):
+    row = db.query(AssetBotConfigDB).filter_by(asset=asset).first()
+    if row:
+        row.asset_label = req.asset_label; row.category = req.category
+        row.enabled = req.enabled; row.sniper_only = req.sniper_only
+        row.min_signal_score = req.min_signal_score; row.stop_loss_pct = req.stop_loss_pct
+        row.take_profit_pct = req.take_profit_pct; row.max_position_pct = req.max_position_pct
+        row.updated_at = datetime.utcnow()
+    else:
+        row = AssetBotConfigDB(asset=asset, **req.dict())
+        db.add(row)
+    db.commit()
+    return {"message": f"Asset config for {asset} saved"}
+
+
+@app.delete("/api/bot/assets/{asset:path}", status_code=204)
+def delete_asset_config(asset: str, db: Session = Depends(get_db), _: UserDB = Depends(get_admin_user)):
+    row = db.query(AssetBotConfigDB).filter_by(asset=asset).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(row)
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Grid Bot API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/bot/grid")
+def list_grid_bots(db: Session = Depends(get_db), _: UserDB = Depends(get_admin_user)):
+    bots = db.query(GridBotDB).order_by(GridBotDB.created_at.desc()).all()
+    result = []
+    for bot in bots:
+        open_count   = db.query(GridOrderDB).filter_by(grid_bot_id=bot.id, status="OPEN").count()
+        filled_count = db.query(GridOrderDB).filter_by(grid_bot_id=bot.id, status="FILLED").count()
+        result.append({
+            "id": bot.id, "asset": bot.asset, "asset_label": bot.asset_label,
+            "category": bot.category, "enabled": bot.enabled,
+            "base_price": bot.base_price, "grid_spacing_pct": bot.grid_spacing_pct,
+            "num_levels": bot.num_levels, "capital_per_level": bot.capital_per_level,
+            "total_pnl": bot.total_pnl, "open_orders": open_count, "filled_orders": filled_count,
+            "created_at": bot.created_at.isoformat(),
+        })
+    return result
+
+
+@app.post("/api/bot/grid", status_code=201)
+def create_grid_bot(req: GridBotCreate, db: Session = Depends(get_db), _: UserDB = Depends(get_admin_user)):
+    existing = db.query(GridBotDB).filter_by(asset=req.asset).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Grid bot for {req.asset} already exists")
+    bot = GridBotDB(**req.dict(), enabled=False, total_pnl=0.0)
+    db.add(bot)
+    db.flush()
+    _initialize_grid_orders(bot, db)
+    db.commit()
+    return {"id": bot.id, "message": "Grid bot created"}
+
+
+@app.patch("/api/bot/grid/{bot_id}")
+def update_grid_bot(bot_id: str, req: GridBotUpdate, db: Session = Depends(get_db), _: UserDB = Depends(get_admin_user)):
+    bot = db.query(GridBotDB).filter_by(id=bot_id).first()
+    if not bot:
+        raise HTTPException(status_code=404, detail="Grid bot not found")
+    structural = any([
+        req.base_price is not None and req.base_price != bot.base_price,
+        req.grid_spacing_pct is not None and req.grid_spacing_pct != bot.grid_spacing_pct,
+        req.num_levels is not None and req.num_levels != bot.num_levels,
+    ])
+    if req.enabled is not None:          bot.enabled           = req.enabled
+    if req.base_price is not None:       bot.base_price        = req.base_price
+    if req.grid_spacing_pct is not None: bot.grid_spacing_pct  = req.grid_spacing_pct
+    if req.num_levels is not None:       bot.num_levels        = req.num_levels
+    if req.capital_per_level is not None: bot.capital_per_level = req.capital_per_level
+    if structural:
+        db.query(GridOrderDB).filter_by(grid_bot_id=bot.id, status="OPEN").delete()
+        _initialize_grid_orders(bot, db)
+    bot.updated_at = datetime.utcnow()
+    db.commit()
+    return {"message": "Grid bot updated"}
+
+
+@app.delete("/api/bot/grid/{bot_id}", status_code=204)
+def delete_grid_bot(bot_id: str, db: Session = Depends(get_db), _: UserDB = Depends(get_admin_user)):
+    db.query(GridOrderDB).filter_by(grid_bot_id=bot_id).delete()
+    bot = db.query(GridBotDB).filter_by(id=bot_id).first()
+    if not bot:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(bot)
+    db.commit()
+
+
+@app.get("/api/bot/grid/{bot_id}/orders")
+def get_grid_orders(bot_id: str, status: Optional[str] = None, db: Session = Depends(get_db), _: UserDB = Depends(get_admin_user)):
+    q = db.query(GridOrderDB).filter_by(grid_bot_id=bot_id)
+    if status:
+        q = q.filter_by(status=status.upper())
+    orders = q.order_by(GridOrderDB.level).all()
+    return [
+        {
+            "id": o.id, "level": o.level, "price": o.price, "direction": o.direction,
+            "status": o.status, "filled_price": o.filled_price, "pnl": o.pnl,
+            "created_at": o.created_at.isoformat(),
+            "filled_at": o.filled_at.isoformat() if o.filled_at else None,
+        }
+        for o in orders
+    ]
+
+
+@app.post("/api/bot/grid/{bot_id}/run")
+def grid_run_now(bot_id: str, _: UserDB = Depends(get_admin_user)):
+    try:
+        run_grid_cycle()
+        return {"message": "Grid cycle completed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Grid cycle failed")
 
 
 # ---------------------------------------------------------------------------

@@ -85,15 +85,83 @@ const ACTION_COLOR: Record<string, string> = {
   STOP_LOSS:    "text-red-400 border-red-400/30 bg-red-400/10",
   TAKE_PROFIT:  "text-terminal-accent border-terminal-accent/30 bg-terminal-accent/10",
   SIGNAL_EXIT:  "text-orange-400 border-orange-400/30 bg-orange-400/10",
+  SNIPER_BUY:   "text-purple-400 border-purple-400/30 bg-purple-400/10",
+  SNIPER_SELL:  "text-pink-400 border-pink-400/30 bg-pink-400/10",
 };
 
+interface SniperConfig {
+  enabled: boolean;
+  mismatch_threshold: number;
+  min_signal_score: number;
+  position_pct: number;
+  max_sniper_positions: number;
+}
+
+interface AssetConfig {
+  asset: string;
+  asset_label: string;
+  category: string;
+  enabled: boolean;
+  sniper_only: boolean;
+  min_signal_score: number | null;
+  stop_loss_pct: number | null;
+  take_profit_pct: number | null;
+  max_position_pct: number | null;
+}
+
+interface GridBot {
+  id: string;
+  asset: string;
+  asset_label: string;
+  category: string;
+  enabled: boolean;
+  base_price: number;
+  grid_spacing_pct: number;
+  num_levels: number;
+  capital_per_level: number;
+  total_pnl: number;
+  open_orders: number;
+  filled_orders: number;
+}
+
+interface GridOrder {
+  id: string;
+  level: number;
+  price: number;
+  direction: string;
+  status: string;
+  filled_price: number | null;
+  pnl: number | null;
+}
+
 export default function BotPage() {
-  const [status, setStatus]       = useState<BotStatus | null>(null);
-  const [trades, setTrades]       = useState<Trade[]>([]);
-  const [premarket, setPremarket] = useState<PreMarketData | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [running, setRunning]     = useState(false);
+  const [status, setStatus]           = useState<BotStatus | null>(null);
+  const [trades, setTrades]           = useState<Trade[]>([]);
+  const [premarket, setPremarket]     = useState<PreMarketData | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [running, setRunning]         = useState(false);
   const [scanRunning, setScanRunning] = useState(false);
+  const [activeTab, setActiveTab]     = useState<"standard"|"sniper"|"assets"|"grid"|"trades">("standard");
+
+  // Sniper state
+  const [sniperCfg, setSniperCfg]         = useState<SniperConfig | null>(null);
+  const [sniperEnabled, setSniperEnabled] = useState(false);
+  const [sniperThreshold, setSniperThreshold] = useState("85");
+  const [sniperMinScore, setSniperMinScore]   = useState("90");
+  const [sniperPosPct, setSniperPosPct]       = useState("35");
+  const [sniperMaxPos, setSniperMaxPos]       = useState("2");
+
+  // Per-asset state
+  const [assetCfgs, setAssetCfgs]         = useState<AssetConfig[]>([]);
+  const [newAsset, setNewAsset]           = useState("");
+  const [newAssetLabel, setNewAssetLabel] = useState("");
+  const [newAssetCat, setNewAssetCat]     = useState("Stock");
+
+  // Grid state
+  const [gridBots, setGridBots]           = useState<GridBot[]>([]);
+  const [expandedGrid, setExpandedGrid]   = useState<string | null>(null);
+  const [gridOrders, setGridOrders]       = useState<Record<string, GridOrder[]>>({});
+  const [newGrid, setNewGrid]             = useState({ asset: "", asset_label: "", category: "Stock", base_price: "", grid_spacing_pct: "2", num_levels: "5", capital_per_level: "" });
 
   // Config edit state
   const [capital, setCapital]     = useState("");
@@ -105,14 +173,27 @@ export default function BotPage() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [s, t, pm] = await Promise.all([
-        fetch("/api/bot/status",    { headers: authHeaders() }).then(r => r.json()),
-        fetch("/api/bot/trades",    { headers: authHeaders() }).then(r => r.json()),
-        fetch("/api/bot/premarket", { headers: authHeaders() }).then(r => r.json()).catch(() => null),
+      const [s, t, pm, sc, ac, gb] = await Promise.all([
+        fetch("/api/bot/status",        { headers: authHeaders() }).then(r => r.json()),
+        fetch("/api/bot/trades",        { headers: authHeaders() }).then(r => r.json()),
+        fetch("/api/bot/premarket",     { headers: authHeaders() }).then(r => r.json()).catch(() => null),
+        fetch("/api/bot/sniper/config", { headers: authHeaders() }).then(r => r.json()).catch(() => null),
+        fetch("/api/bot/assets",        { headers: authHeaders() }).then(r => r.json()).catch(() => []),
+        fetch("/api/bot/grid",          { headers: authHeaders() }).then(r => r.json()).catch(() => []),
       ]);
       setStatus(s);
       setTrades(t);
       if (pm && pm.picks) setPremarket(pm);
+      if (sc) {
+        setSniperCfg(sc);
+        setSniperEnabled(sc.enabled);
+        setSniperThreshold(String(sc.mismatch_threshold));
+        setSniperMinScore(String(sc.min_signal_score));
+        setSniperPosPct(String(sc.position_pct));
+        setSniperMaxPos(String(sc.max_sniper_positions));
+      }
+      if (Array.isArray(ac)) setAssetCfgs(ac);
+      if (Array.isArray(gb)) setGridBots(gb);
       if (s.config) {
         setMinScore(String(s.config.min_signal_score));
         setMaxPos(String(s.config.max_position_pct));
@@ -329,7 +410,273 @@ export default function BotPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-terminal-border/40 overflow-x-auto">
+        {(["standard","sniper","assets","grid","trades"] as const).map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-xs font-bold tracking-widest whitespace-nowrap border-b-2 transition-colors ${
+              activeTab === tab
+                ? tab === "sniper" ? "text-purple-400 border-purple-400"
+                  : tab === "grid" ? "text-cyan-400 border-cyan-400"
+                  : "text-terminal-accent border-terminal-accent"
+                : "text-terminal-dim border-transparent hover:text-terminal-text"
+            }`}>
+            {tab === "standard" ? "⚡ STANDARD" : tab === "sniper" ? "🎯 SNIPER" : tab === "assets" ? "⚙ PER-ASSET" : tab === "grid" ? "⊞ GRID" : "📋 TRADE LOG"}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "trades" && (
+        <div className="space-y-3">
+          <p className="text-terminal-dim text-xs tracking-widest">FULL TRADE LOG</p>
+          <div className="border border-terminal-border/30 rounded-lg overflow-hidden">
+            {trades.length === 0 ? (
+              <div className="p-6 text-center text-terminal-dim text-xs">No trades yet</div>
+            ) : trades.map(t => (
+              <div key={t.id} className="flex items-start gap-3 px-4 py-2.5 border-b border-terminal-border/20 text-xs hover:bg-terminal-card/20">
+                <span className={`shrink-0 px-1.5 py-0.5 rounded border text-xs font-bold ${ACTION_COLOR[t.action] ?? "text-terminal-dim border-terminal-border"}`}>
+                  {t.action.replace("_", " ")}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-terminal-text font-semibold">{t.asset_label}</span>
+                  <span className="text-terminal-dim ml-2">@ ${t.price < 1 ? t.price.toFixed(6) : t.price.toFixed(2)}</span>
+                  <span className="text-terminal-dim ml-2">${t.quantity_usd.toFixed(2)}</span>
+                  {t.pnl != null && <span className={`ml-2 font-bold ${t.pnl >= 0 ? "text-terminal-buy" : "text-terminal-sell"}`}>{t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(3)}</span>}
+                  <p className="text-terminal-dim opacity-60 truncate mt-0.5">{t.reasoning}</p>
+                </div>
+                <span className="text-terminal-dim opacity-50 shrink-0">{new Date(t.created_at).toLocaleTimeString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "sniper" && sniperCfg && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <span className={`text-xs px-2 py-0.5 rounded border font-bold ${sniperEnabled ? "text-purple-400 border-purple-400/40 bg-purple-400/10 animate-pulse" : "text-terminal-dim border-terminal-border"}`}>
+              {sniperEnabled ? "● ACTIVE" : "○ OFF"}
+            </span>
+            <p className="text-terminal-dim text-xs">Sniper fires only when mismatch ≥ threshold AND signal score ≥ min score. Max {sniperCfg.max_sniper_positions} positions at once.</p>
+          </div>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+            <div className="border border-purple-400/20 rounded-lg p-4 space-y-4 bg-purple-400/5">
+              <p className="text-purple-400 text-xs tracking-widest font-bold">SNIPER CONFIGURATION</p>
+              <div className="flex items-center justify-between">
+                <span className="text-terminal-dim text-xs">ENABLED</span>
+                <button onClick={() => setSniperEnabled(e => !e)}
+                  className={`px-3 py-1 text-xs rounded border font-bold transition-colors ${sniperEnabled ? "text-purple-400 border-purple-400/40 bg-purple-400/10" : "text-terminal-dim border-terminal-border"}`}>
+                  {sniperEnabled ? "ON" : "OFF"}
+                </button>
+              </div>
+              <ConfigRow label="MISMATCH THRESHOLD" value={sniperThreshold} onChange={setSniperThreshold} hint="Minimum mismatch score to fire (default 85)" />
+              <ConfigRow label="MIN SIGNAL SCORE" value={sniperMinScore} onChange={setSniperMinScore} hint="Minimum absolute signal score (default 90)" />
+              <ConfigRow label="POSITION SIZE (%)" value={sniperPosPct} onChange={setSniperPosPct} hint="% of starting capital per sniper trade" />
+              <ConfigRow label="MAX SNIPER POSITIONS" value={sniperMaxPos} onChange={setSniperMaxPos} hint="Max concurrent sniper positions" />
+              <div className="flex gap-2">
+                <button onClick={async () => {
+                  await fetch("/api/bot/sniper/config", { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ enabled: sniperEnabled, mismatch_threshold: parseFloat(sniperThreshold), min_signal_score: parseFloat(sniperMinScore), position_pct: parseFloat(sniperPosPct), max_sniper_positions: parseInt(sniperMaxPos) }) });
+                  fetchAll();
+                }} className="flex-1 text-xs text-purple-400 border border-purple-400/40 hover:bg-purple-400/10 py-2 rounded tracking-widest transition-colors font-bold">
+                  SAVE SNIPER CONFIG
+                </button>
+                <button onClick={async () => { await fetch("/api/bot/sniper/run", { method: "POST", headers: authHeaders() }); fetchAll(); }}
+                  className="text-xs text-terminal-dim border border-terminal-border hover:text-purple-400 hover:border-purple-400/40 px-3 py-2 rounded transition-colors">
+                  FIRE NOW
+                </button>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <p className="text-terminal-dim text-xs tracking-widest">ACTIVE SNIPER POSITIONS</p>
+              {status?.positions.filter(p => p.entry_reasoning?.includes("[SNIPER]")).length === 0 ? (
+                <div className="border border-terminal-border/30 rounded-lg p-6 text-center text-terminal-dim text-sm">No active sniper positions</div>
+              ) : status?.positions.filter(p => p.entry_reasoning?.includes("[SNIPER]")).map(pos => (
+                <div key={pos.id} className="border border-purple-400/20 rounded-lg p-3 bg-purple-400/5 text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-purple-400 font-bold">{pos.asset_label}</span>
+                    <span className={pos.pnl_usd >= 0 ? "text-terminal-buy font-bold" : "text-terminal-sell font-bold"}>
+                      {pos.pnl_usd >= 0 ? "+" : ""}${pos.pnl_usd.toFixed(3)} ({pos.pnl_pct >= 0 ? "+" : ""}{pos.pnl_pct.toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div className="text-terminal-dim">{pos.entry_reasoning?.slice(0, 120)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "assets" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-terminal-dim text-xs tracking-widest">PER-ASSET OVERRIDES — null = inherits global config</p>
+          </div>
+          {/* Add asset form */}
+          <div className="border border-terminal-border/30 rounded-lg p-4 bg-terminal-card/20 space-y-3">
+            <p className="text-terminal-accent text-xs font-bold tracking-widest">ADD ASSET OVERRIDE</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <input placeholder="Asset key (e.g. GOLD)" value={newAsset} onChange={e => setNewAsset(e.target.value.toUpperCase())}
+                className="bg-transparent border border-terminal-border rounded px-2 py-1.5 text-xs text-terminal-text focus:outline-none focus:border-terminal-accent" />
+              <input placeholder="Label (e.g. Gold)" value={newAssetLabel} onChange={e => setNewAssetLabel(e.target.value)}
+                className="bg-transparent border border-terminal-border rounded px-2 py-1.5 text-xs text-terminal-text focus:outline-none focus:border-terminal-accent" />
+              <select value={newAssetCat} onChange={e => setNewAssetCat(e.target.value)}
+                className="bg-terminal-bg border border-terminal-border rounded px-2 py-1.5 text-xs text-terminal-text focus:outline-none focus:border-terminal-accent">
+                {["Stock","Commodity","Currency","Index","Crypto","Sector","Fixed Income"].map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <button onClick={async () => {
+              if (!newAsset || !newAssetLabel) return;
+              await fetch(`/api/bot/assets/${newAsset}`, { method: "PUT", headers: authHeaders(), body: JSON.stringify({ asset_label: newAssetLabel, category: newAssetCat }) });
+              setNewAsset(""); setNewAssetLabel(""); fetchAll();
+            }} className="text-xs text-terminal-accent border border-terminal-accent/40 hover:bg-terminal-accent/10 px-4 py-1.5 rounded transition-colors font-bold">
+              ADD OVERRIDE
+            </button>
+          </div>
+          {/* Asset table */}
+          {assetCfgs.length === 0 ? (
+            <div className="text-center text-terminal-dim py-8 text-sm">No per-asset overrides set. Global config applies to all assets.</div>
+          ) : (
+            <div className="border border-terminal-border/30 rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-terminal-card/80 text-terminal-dim border-b border-terminal-border">
+                    <th className="text-left px-3 py-2">ASSET</th>
+                    <th className="text-center px-3 py-2">ENABLED</th>
+                    <th className="text-center px-3 py-2">SNIPER ONLY</th>
+                    <th className="text-right px-3 py-2">MIN SCORE</th>
+                    <th className="text-right px-3 py-2">STOP LOSS</th>
+                    <th className="text-right px-3 py-2">TAKE PROFIT</th>
+                    <th className="text-right px-3 py-2">MAX POS%</th>
+                    <th className="text-center px-3 py-2">DELETE</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assetCfgs.map(ac => (
+                    <tr key={ac.asset} className="border-b border-terminal-border/30 hover:bg-terminal-card/30 transition-colors">
+                      <td className="px-3 py-2">
+                        <span className="text-terminal-accent font-bold">{ac.asset_label}</span>
+                        <span className="text-terminal-dim ml-1">({ac.asset})</span>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button onClick={async () => {
+                          await fetch(`/api/bot/assets/${ac.asset}`, { method: "PUT", headers: authHeaders(), body: JSON.stringify({ ...ac, enabled: !ac.enabled }) });
+                          fetchAll();
+                        }} className={`px-2 py-0.5 rounded border text-xs font-bold transition-colors ${ac.enabled ? "text-terminal-buy border-terminal-buy/30" : "text-terminal-dim border-terminal-border"}`}>
+                          {ac.enabled ? "ON" : "OFF"}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button onClick={async () => {
+                          await fetch(`/api/bot/assets/${ac.asset}`, { method: "PUT", headers: authHeaders(), body: JSON.stringify({ ...ac, sniper_only: !ac.sniper_only }) });
+                          fetchAll();
+                        }} className={`px-2 py-0.5 rounded border text-xs font-bold transition-colors ${ac.sniper_only ? "text-purple-400 border-purple-400/30" : "text-terminal-dim border-terminal-border"}`}>
+                          {ac.sniper_only ? "YES" : "NO"}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2 text-right text-terminal-dim">{ac.min_signal_score ?? "—"}</td>
+                      <td className="px-3 py-2 text-right text-terminal-sell">{ac.stop_loss_pct != null ? `${ac.stop_loss_pct}%` : "—"}</td>
+                      <td className="px-3 py-2 text-right text-terminal-buy">{ac.take_profit_pct != null ? `${ac.take_profit_pct}%` : "—"}</td>
+                      <td className="px-3 py-2 text-right text-terminal-dim">{ac.max_position_pct != null ? `${ac.max_position_pct}%` : "—"}</td>
+                      <td className="px-3 py-2 text-center">
+                        <button onClick={async () => { await fetch(`/api/bot/assets/${ac.asset}`, { method: "DELETE", headers: authHeaders() }); fetchAll(); }}
+                          className="text-red-400 hover:text-red-300 border border-red-400/30 px-2 py-0.5 rounded text-xs transition-colors">✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "grid" && (
+        <div className="space-y-4">
+          {/* Create grid form */}
+          <div className="border border-cyan-400/20 rounded-lg p-4 bg-cyan-400/5 space-y-3">
+            <p className="text-cyan-400 text-xs font-bold tracking-widest">CREATE GRID BOT</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              <input placeholder="Asset key (e.g. GOLD)" value={newGrid.asset} onChange={e => setNewGrid(g => ({...g, asset: e.target.value.toUpperCase()}))}
+                className="bg-transparent border border-terminal-border rounded px-2 py-1.5 text-xs text-terminal-text focus:outline-none focus:border-cyan-400" />
+              <input placeholder="Label (e.g. Gold)" value={newGrid.asset_label} onChange={e => setNewGrid(g => ({...g, asset_label: e.target.value}))}
+                className="bg-transparent border border-terminal-border rounded px-2 py-1.5 text-xs text-terminal-text focus:outline-none focus:border-cyan-400" />
+              <input placeholder="Base price ($)" type="number" value={newGrid.base_price} onChange={e => setNewGrid(g => ({...g, base_price: e.target.value}))}
+                className="bg-transparent border border-terminal-border rounded px-2 py-1.5 text-xs text-terminal-text focus:outline-none focus:border-cyan-400" />
+              <input placeholder="Grid spacing (%)" type="number" value={newGrid.grid_spacing_pct} onChange={e => setNewGrid(g => ({...g, grid_spacing_pct: e.target.value}))}
+                className="bg-transparent border border-terminal-border rounded px-2 py-1.5 text-xs text-terminal-text focus:outline-none focus:border-cyan-400" />
+              <input placeholder="Levels (each side)" type="number" value={newGrid.num_levels} onChange={e => setNewGrid(g => ({...g, num_levels: e.target.value}))}
+                className="bg-transparent border border-terminal-border rounded px-2 py-1.5 text-xs text-terminal-text focus:outline-none focus:border-cyan-400" />
+              <input placeholder="Capital per level ($)" type="number" value={newGrid.capital_per_level} onChange={e => setNewGrid(g => ({...g, capital_per_level: e.target.value}))}
+                className="bg-transparent border border-terminal-border rounded px-2 py-1.5 text-xs text-terminal-text focus:outline-none focus:border-cyan-400" />
+            </div>
+            <button onClick={async () => {
+              if (!newGrid.asset || !newGrid.base_price || !newGrid.capital_per_level) return;
+              await fetch("/api/bot/grid", { method: "POST", headers: authHeaders(), body: JSON.stringify({ ...newGrid, base_price: parseFloat(newGrid.base_price), grid_spacing_pct: parseFloat(newGrid.grid_spacing_pct), num_levels: parseInt(newGrid.num_levels), capital_per_level: parseFloat(newGrid.capital_per_level) }) });
+              setNewGrid({ asset: "", asset_label: "", category: "Stock", base_price: "", grid_spacing_pct: "2", num_levels: "5", capital_per_level: "" });
+              fetchAll();
+            }} className="text-xs text-cyan-400 border border-cyan-400/40 hover:bg-cyan-400/10 px-4 py-1.5 rounded transition-colors font-bold">
+              CREATE GRID BOT
+            </button>
+            <p className="text-terminal-dim/60 text-xs">Grid places BUY orders below base price and SELL orders above. Profits from price oscillating between levels. Best for volatile sideways assets (crypto, gold).</p>
+          </div>
+
+          {/* Grid bots list */}
+          {gridBots.length === 0 ? (
+            <div className="text-center text-terminal-dim py-8 text-sm">No grid bots created yet.</div>
+          ) : gridBots.map(bot => (
+            <div key={bot.id} className="border border-cyan-400/20 rounded-lg bg-cyan-400/5 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs px-2 py-0.5 rounded border font-bold ${bot.enabled ? "text-terminal-buy border-terminal-buy/40 animate-pulse" : "text-terminal-dim border-terminal-border"}`}>
+                    {bot.enabled ? "● ON" : "○ OFF"}
+                  </span>
+                  <span className="text-terminal-text font-bold text-sm">{bot.asset_label}</span>
+                  <span className="text-terminal-dim text-xs">Base: ${bot.base_price.toLocaleString()} · ±{bot.grid_spacing_pct}% · {bot.num_levels} levels · ${bot.capital_per_level}/level</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs font-bold font-mono ${bot.total_pnl >= 0 ? "text-terminal-buy" : "text-terminal-sell"}`}>
+                    P&L: {bot.total_pnl >= 0 ? "+" : ""}${bot.total_pnl.toFixed(4)}
+                  </span>
+                  <span className="text-terminal-dim text-xs">{bot.open_orders} open · {bot.filled_orders} filled</span>
+                  <button onClick={async () => { await fetch(`/api/bot/grid/${bot.id}`, { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ enabled: !bot.enabled }) }); fetchAll(); }}
+                    className={`text-xs px-2 py-1 rounded border transition-colors ${bot.enabled ? "text-red-400 border-red-400/30 hover:bg-red-400/10" : "text-terminal-buy border-terminal-buy/30 hover:bg-terminal-buy/10"}`}>
+                    {bot.enabled ? "DISABLE" : "ENABLE"}
+                  </button>
+                  <button onClick={async () => {
+                    const orders = await fetch(`/api/bot/grid/${bot.id}/orders`, { headers: authHeaders() }).then(r => r.json());
+                    setGridOrders(prev => ({ ...prev, [bot.id]: orders }));
+                    setExpandedGrid(expandedGrid === bot.id ? null : bot.id);
+                  }} className="text-xs text-cyan-400 border border-cyan-400/30 hover:bg-cyan-400/10 px-2 py-1 rounded transition-colors">
+                    {expandedGrid === bot.id ? "HIDE" : "ORDERS"}
+                  </button>
+                  <button onClick={async () => { if (confirm("Delete this grid bot?")) { await fetch(`/api/bot/grid/${bot.id}`, { method: "DELETE", headers: authHeaders() }); fetchAll(); } }}
+                    className="text-xs text-red-400 border border-red-400/30 hover:bg-red-400/10 px-2 py-1 rounded transition-colors">✕</button>
+                </div>
+              </div>
+              {expandedGrid === bot.id && gridOrders[bot.id] && (
+                <div className="border-t border-cyan-400/20 px-4 py-3 max-h-64 overflow-y-auto">
+                  <div className="space-y-1">
+                    {gridOrders[bot.id].map(order => (
+                      <div key={order.id} className={`flex items-center justify-between text-xs px-2 py-1 rounded ${order.status === "FILLED" ? "opacity-40" : order.direction === "BUY" ? "bg-terminal-buy/5" : "bg-terminal-sell/5"}`}>
+                        <span className={`font-bold w-8 text-center ${order.direction === "BUY" ? "text-terminal-buy" : "text-terminal-sell"}`}>{order.level > 0 ? "+" : ""}{order.level}</span>
+                        <span className={order.direction === "BUY" ? "text-terminal-buy" : "text-terminal-sell"}>{order.direction}</span>
+                        <span className="font-mono text-terminal-text">${order.price.toLocaleString()}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-xs border ${order.status === "FILLED" ? "text-terminal-dim border-terminal-border" : order.direction === "BUY" ? "text-terminal-buy border-terminal-buy/30" : "text-terminal-sell border-terminal-sell/30"}`}>
+                          {order.status}
+                        </span>
+                        {order.filled_price && <span className="text-terminal-dim">filled @ ${order.filled_price.toLocaleString()}</span>}
+                        {order.pnl != null && order.pnl > 0 && <span className="text-terminal-buy font-bold">+${order.pnl.toFixed(4)}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(activeTab === "standard") && <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
 
         {/* Open Positions */}
         <div className="xl:col-span-2 space-y-3">

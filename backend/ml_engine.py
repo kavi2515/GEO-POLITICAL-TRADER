@@ -23,6 +23,15 @@ REASONING_TEMPLATES: dict[str, dict[str, str]] = {
         "DAX":          "European equities face direct exposure to regional conflict",
         "CRYPTO/BTC":   "Bitcoin treats as risk asset; sold in flight-to-safety move",
         "DEFENCE":      "Defence sector benefits from increased military spending expectations",
+        "LMT":          "Lockheed Martin orders surge as nations increase defence budgets",
+        "RTX":          "Raytheon missiles and systems in high demand during conflict escalation",
+        "NOC":          "Northrop Grumman benefits from elevated military procurement",
+        "BA":           "Boeing defence division benefits from wartime procurement cycles",
+        "GD":           "General Dynamics armoured vehicles and systems see increased orders",
+        "AAPL":         "Apple supply chains disrupted; consumer spending curtailed by conflict fears",
+        "MSFT":         "Microsoft cloud demand resilient but defence contracts offset civilian slowdown",
+        "CRYPTO/BTC":   "Bitcoin sold in risk-off flight to safety during military escalation",
+        "CRYPTO/ETH":   "Ethereum network activity declines as risk appetite collapses",
     },
     "sanctions": {
         "USD":              "Sanctions force dollar-denominated settlements; USD demand rises",
@@ -47,6 +56,13 @@ REASONING_TEMPLATES: dict[str, dict[str, str]] = {
         "TECH":      "Technology sector vulnerable to semiconductor/IP trade restrictions",
         "USD":       "Dollar strengthens on relative safe-haven status",
         "GOLD":      "Gold bids as trade uncertainty erodes global growth outlook",
+        "AAPL":      "Apple heavily exposed to China manufacturing and sales — tariffs bite hard",
+        "NVDA":      "Nvidia chips face export restrictions to China; revenue at risk",
+        "TSM":       "Taiwan Semiconductor in crosshairs of US-China tech decoupling",
+        "ASML":      "ASML chip-making equipment export bans disrupt global semiconductor supply",
+        "AMZN":      "Amazon e-commerce margins squeezed by import tariffs on goods",
+        "QCOM":      "Qualcomm revenues at risk from China smartphone market restrictions",
+        "INTC":      "Intel semiconductor sales to China threatened by export controls",
     },
     "energy_crisis": {
         "OIL/BRENT":  "Supply cut drives Brent crude prices sharply higher",
@@ -56,6 +72,13 @@ REASONING_TEMPLATES: dict[str, dict[str, str]] = {
         "AIRLINE":    "Airlines face severe margin compression from fuel cost spike",
         "TRANSPORT":  "Transport sector profitability hit by energy price surge",
         "PLASTICS":   "Petrochemical sector input costs rise sharply",
+        "XOM":        "ExxonMobil revenues surge on elevated crude and gas prices",
+        "CVX":        "Chevron upstream earnings jump as oil supply tightens",
+        "COP":        "ConocoPhillips production assets gain significant value",
+        "BP":         "BP upstream operations highly leveraged to oil price spikes",
+        "SHEL":       "Shell benefits from LNG and crude price surge simultaneously",
+        "TTE":        "TotalEnergies profits climb on integrated energy price exposure",
+        "NEM":        "Newmont gold production costs rise but gold price follows energy",
     },
     "monetary_policy": {
         "USD":              "Rate hike expectations strengthen the dollar",
@@ -63,6 +86,17 @@ REASONING_TEMPLATES: dict[str, dict[str, str]] = {
         "GOLD":             "Rising real rates increase the opportunity cost of holding gold",
         "EMERGING_MARKETS": "EM currencies and assets under pressure from tighter dollar conditions",
         "REAL_ESTATE":      "Higher borrowing costs weigh on property valuations",
+        "CRYPTO/BTC":       "Bitcoin reprices lower as tighter liquidity drains speculative positions",
+        "CRYPTO/ETH":       "Ethereum DeFi activity contracts under high interest rate environment",
+        "CRYPTO/SOL":       "Solana high-beta crypto sold as risk-off conditions tighten",
+        "CRYPTO/DOGE":      "Speculative crypto assets fall sharply in risk-off rate environments",
+        "MSFT":             "High-multiple growth stocks reprice lower as discount rate rises",
+        "NVDA":             "AI valuation premium contracts under hawkish rate environment",
+        "AMZN":             "Amazon growth stock multiple compresses on rising interest rates",
+        "TSLA":             "Tesla high P/E valuation vulnerable to rising discount rates",
+        "JPM":              "JPMorgan net interest margin expands on higher rates",
+        "GS":               "Goldman Sachs trading revenues typically elevated during rate cycles",
+        "BAC":              "Bank of America benefits from wider lending spreads on rate hikes",
     },
     "natural_disaster": {
         "INSURANCE":       "Insurance sector faces material claims from disaster",
@@ -76,11 +110,38 @@ REASONING_TEMPLATES: dict[str, dict[str, str]] = {
         "SPX500":           "Equities rally on improved global stability outlook",
         "EUR":              "Euro bid on reduced European geopolitical risk",
         "EMERGING_MARKETS": "EM assets recover as global risk appetite returns",
+        "AAPL":             "Apple supply chain risk eases; market access improves",
+        "MSFT":             "Microsoft cloud and enterprise deals benefit from stable geopolitics",
+        "TSM":              "Taiwan Semi supply chain risk relief drives stock recovery",
+        "BABA":             "Alibaba rebounds on reduced US-China tension and regulatory clarity",
+        "LMT":              "Lockheed Martin defence orders moderate as tensions ease",
+        "CRYPTO/BTC":       "Bitcoin rallies as geopolitical risk premium unwinds and risk appetite returns",
+        "CRYPTO/ETH":       "Ethereum DeFi and NFT activity rebounds on improved global sentiment",
+        "CRYPTO/SOL":       "Solana high-beta crypto surges as risk-on sentiment returns",
     },
     "economic_data": {
         "USD":    "Strong economic data supports dollar demand",
         "SPX500": "Positive economic signals support equity valuations",
         "BONDS":  "Improved growth outlook shifts allocation from bonds to equities",
+        "JPM":    "JPMorgan benefits from strong economic activity and loan growth",
+        "GS":     "Goldman Sachs deal flow and M&A activity surge with economic confidence",
+        "BAC":    "Bank of America consumer lending volumes grow with positive economic data",
+        "AMZN":   "Amazon consumer spending and AWS cloud growth tied to economic health",
+        "AAPL":   "Apple consumer device demand correlates with broader economic strength",
+    },
+    "sanctions": {
+        "USD":               "Sanctions force dollar-denominated settlements; USD demand rises",
+        "GOLD":              "Sanctioned entities often increase gold holdings to bypass restrictions",
+        "OIL/BRENT":         "Sanctions on oil exporters constrict global supply",
+        "AFFECTED_CURRENCY": "Target nation's currency sold on capital flight and reduced trade",
+        "EMERGING_MARKETS":  "EM assets sold on risk-off contagion from sanctions",
+        "BP":                "BP operations at risk if energy sanctions tighten on key producers",
+        "SHEL":              "Shell forced to write down assets in sanctioned regions",
+        "XOM":               "ExxonMobil exits or suspends operations in sanctioned territories",
+        "CRYPTO/BTC":        "Bitcoin demand surges as sanctioned entities seek unblockable value transfer",
+        "CRYPTO/ETH":        "Ethereum used to bypass SWIFT restrictions via DeFi protocols",
+        "CRYPTO/XRP":        "XRP cross-border settlement demand rises as SWIFT access is cut",
+        "CRYPTO/USDT":       "Stablecoin demand spikes in sanctioned regions as dollar access is restricted",
     },
 }
 
@@ -100,15 +161,32 @@ ASSET_META: dict[str, dict] = {
     "GBP":            {"label": "GBP",          "category": "Currency"},
     "CHF":            {"label": "CHF",          "category": "Currency"},
     "CNY":            {"label": "CNY",          "category": "Currency"},
-    "RUB":            {"label": "RUB",          "category": "Currency"},
-    "TRY":            {"label": "TRY",          "category": "Currency"},
-    "SPX500":         {"label": "S&P 500",      "category": "Index"},
+    "RUB":            {"label": "Russian Ruble",    "category": "Currency"},
+    "TRY":            {"label": "Turkish Lira",    "category": "Currency"},
+    "INR":            {"label": "Indian Rupee",    "category": "Currency"},
+    "BRL":            {"label": "Brazilian Real",  "category": "Currency"},
+    "ILS":            {"label": "Israeli Shekel",  "category": "Currency"},
+    "KRW":            {"label": "Korean Won",      "category": "Currency"},
+    "TWD":            {"label": "Taiwan Dollar",   "category": "Currency"},
+    "PKR":            {"label": "Pakistani Rupee", "category": "Currency"},
+    "SAR":            {"label": "Saudi Riyal",     "category": "Currency"},
+    "UAH":            {"label": "Ukrainian Hryvnia","category": "Currency"},
+    "SPX500":         {"label": "S&P 500",         "category": "Index"},
     "NASDAQ":         {"label": "NASDAQ",       "category": "Index"},
     "DAX":            {"label": "DAX",          "category": "Index"},
     "NIKKEI225":      {"label": "Nikkei 225",   "category": "Index"},
     "FTSE100":        {"label": "FTSE 100",     "category": "Index"},
     "HSI":            {"label": "Hang Seng",    "category": "Index"},
-    "CRYPTO/BTC":     {"label": "Bitcoin",      "category": "Crypto"},
+    "CRYPTO/BTC":     {"label": "Bitcoin",        "category": "Crypto"},
+    "CRYPTO/ETH":     {"label": "Ethereum",       "category": "Crypto"},
+    "CRYPTO/SOL":     {"label": "Solana",          "category": "Crypto"},
+    "CRYPTO/XRP":     {"label": "XRP (Ripple)",    "category": "Crypto"},
+    "CRYPTO/BNB":     {"label": "BNB (Binance)",   "category": "Crypto"},
+    "CRYPTO/ADA":     {"label": "Cardano",          "category": "Crypto"},
+    "CRYPTO/DOGE":    {"label": "Dogecoin",         "category": "Crypto"},
+    "CRYPTO/AVAX":    {"label": "Avalanche",        "category": "Crypto"},
+    "CRYPTO/LINK":    {"label": "Chainlink",        "category": "Crypto"},
+    "CRYPTO/DOT":     {"label": "Polkadot",         "category": "Crypto"},
     "DEFENCE":        {"label": "Defence ETF",  "category": "Sector"},
     "TECH":           {"label": "Tech Sector",  "category": "Sector"},
     "AIRLINE":        {"label": "Airlines",     "category": "Sector"},
@@ -119,9 +197,53 @@ ASSET_META: dict[str, dict] = {
     "EMERGING_MARKETS": {"label": "EM Assets",  "category": "Index"},
     "AFFECTED_CURRENCY": {"label": "Target Currency", "category": "Currency"},
     "LOCAL_CURRENCY": {"label": "Local Currency", "category": "Currency"},
-    "REAL_ESTATE":    {"label": "Real Estate",  "category": "Sector"},
-    "SEMICONDUCTORS": {"label": "Semiconductors","category": "Sector"},
+    "REAL_ESTATE":    {"label": "Real Estate",    "category": "Sector"},
+    "SEMICONDUCTORS": {"label": "Semiconductors", "category": "Sector"},
     "PLASTICS":       {"label": "Plastics/Petrochem","category": "Sector"},
+    # US Tech — NASDAQ
+    "AAPL":  {"label": "Apple",           "category": "Stock"},
+    "MSFT":  {"label": "Microsoft",       "category": "Stock"},
+    "NVDA":  {"label": "Nvidia",          "category": "Stock"},
+    "GOOGL": {"label": "Alphabet (Google)","category": "Stock"},
+    "AMZN":  {"label": "Amazon",          "category": "Stock"},
+    "META":  {"label": "Meta",            "category": "Stock"},
+    "TSLA":  {"label": "Tesla",           "category": "Stock"},
+    "AMD":   {"label": "AMD",             "category": "Stock"},
+    "INTC":  {"label": "Intel",           "category": "Stock"},
+    "QCOM":  {"label": "Qualcomm",        "category": "Stock"},
+    # US Defense — NYSE
+    "LMT":   {"label": "Lockheed Martin", "category": "Stock"},
+    "RTX":   {"label": "Raytheon",        "category": "Stock"},
+    "NOC":   {"label": "Northrop Grumman","category": "Stock"},
+    "BA":    {"label": "Boeing",          "category": "Stock"},
+    "GD":    {"label": "General Dynamics","category": "Stock"},
+    # US Energy — NYSE
+    "XOM":   {"label": "ExxonMobil",      "category": "Stock"},
+    "CVX":   {"label": "Chevron",         "category": "Stock"},
+    "COP":   {"label": "ConocoPhillips",  "category": "Stock"},
+    # US Finance — NYSE
+    "JPM":   {"label": "JPMorgan Chase",  "category": "Stock"},
+    "GS":    {"label": "Goldman Sachs",   "category": "Stock"},
+    "BAC":   {"label": "Bank of America", "category": "Stock"},
+    # US Healthcare — NYSE
+    "JNJ":   {"label": "Johnson & Johnson","category": "Stock"},
+    "PFE":   {"label": "Pfizer",           "category": "Stock"},
+    # US Mining — NYSE
+    "NEM":   {"label": "Newmont (Gold)",  "category": "Stock"},
+    "FCX":   {"label": "Freeport-McMoRan","category": "Stock"},
+    # Global — listed as US ADRs / NASDAQ
+    "TSM":   {"label": "Taiwan Semi (TSM)","category": "Stock"},
+    "BABA":  {"label": "Alibaba",          "category": "Stock"},
+    "ASML":  {"label": "ASML Holding",     "category": "Stock"},
+    "SAP":   {"label": "SAP SE",           "category": "Stock"},
+    "BP":    {"label": "BP Plc",           "category": "Stock"},
+    "SHEL":  {"label": "Shell",            "category": "Stock"},
+    "TTE":   {"label": "TotalEnergies",    "category": "Stock"},
+    "TM":    {"label": "Toyota",           "category": "Stock"},
+    "RIO":   {"label": "Rio Tinto",        "category": "Stock"},
+    "BHP":   {"label": "BHP Group",        "category": "Stock"},
+    "CHKP":  {"label": "Check Point Software","category": "Stock"},
+    "INFY":  {"label": "Infosys",          "category": "Stock"},
 }
 
 
@@ -167,7 +289,7 @@ class SignalEngine:
 
         # Sort: highest confidence first
         signals.sort(key=lambda s: s["confidence"], reverse=True)
-        return signals[:8]  # cap at 8 signals per article
+        return signals[:12]  # cap at 12 signals per article
 
     # ------------------------------------------------------------------
 
@@ -197,6 +319,17 @@ class SignalEngine:
                 if index not in impact_map:
                     if event_type in {"military_conflict", "political_instability"}:
                         impact_map[index] = "SELL"
+
+            for stock in mkt.get("stocks", []):
+                if stock not in impact_map:
+                    if event_type in {"military_conflict", "political_instability", "sanctions"}:
+                        impact_map[stock] = "SELL"
+                    elif event_type == "diplomatic":
+                        impact_map[stock] = "BUY"
+                    elif event_type == "trade_dispute":
+                        impact_map[stock] = "SELL"
+                    elif event_type in {"energy_crisis"} and stock in {"XOM","CVX","COP","BP","SHEL","TTE"}:
+                        impact_map[stock] = "BUY"
 
             if mkt.get("safe_haven"):
                 impact_map.setdefault("GOLD", "BUY")
