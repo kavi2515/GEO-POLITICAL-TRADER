@@ -19,6 +19,7 @@ import TermsPage from "./pages/TermsPage";
 import WatchlistPage from "./pages/WatchlistPage";
 import WorldMapPage from "./pages/WorldMapPage";
 import SignalHistoryPage from "./pages/SignalHistoryPage";
+import ChatPage from "./pages/ChatPage";
 import { useSignals } from "./hooks/useSignals";
 import { usePrices } from "./hooks/usePrices";
 import type { Filters } from "./types";
@@ -31,7 +32,7 @@ const DEFAULT_FILTERS: Filters = {
   hours:            24,
 };
 
-type Page = "home" | "news" | "stocks" | "markets" | "portfolio" | "worldmap" | "watchlist" | "history" | "admin" | "bot";
+type Page = "home" | "news" | "stocks" | "markets" | "portfolio" | "worldmap" | "watchlist" | "history" | "chat" | "admin" | "bot";
 
 export default function App() {
   const path = window.location.pathname;
@@ -77,6 +78,7 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
     { id: "worldmap",  label: "⬡ WORLD MAP" },
     { id: "watchlist", label: "★ WATCHLIST" },
     { id: "history",   label: "◷ SIGNAL HISTORY" },
+    { id: "chat",      label: "⚡ THOR AI" },
     { id: "bot",       label: "⚡ AI BOT", adminOnly: true },
     { id: "admin",     label: "⬡ ADMIN", adminOnly: true },
   ];
@@ -163,6 +165,10 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
       ) : activePage === "history" ? (
         <div className="max-w-screen-2xl mx-auto">
           <SignalHistoryPage />
+        </div>
+      ) : activePage === "chat" ? (
+        <div className="max-w-screen-2xl mx-auto">
+          <ChatPage />
         </div>
       ) : activePage === "bot" ? (
         <div className="max-w-screen-2xl mx-auto">

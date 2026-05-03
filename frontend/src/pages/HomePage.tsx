@@ -4,6 +4,7 @@ import {
   Briefcase, Globe, ShieldAlert, ArrowRight,
   AlertTriangle, BarChart2, Zap,
 } from "lucide-react";
+import ThorBriefing from "../components/ThorBriefing";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 import type { SignalItem } from "../types";
 import type { PriceData } from "../hooks/usePrices";
@@ -108,6 +109,9 @@ export default function HomePage({ signals, prices, onNavigate, userName }: Prop
 
   return (
     <div className="p-6 space-y-6 max-w-screen-2xl mx-auto">
+      {/* Thor Daily Briefing */}
+      <ThorBriefing userName={userName} />
+
       {/* Welcome */}
       <div className="flex items-center justify-between">
         <div>

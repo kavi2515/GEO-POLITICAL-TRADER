@@ -1310,6 +1310,96 @@ def get_prices(current_user: UserDB = Depends(get_current_user)):
         return {}
 
 
+@app.get("/api/briefing/today")
+def get_briefing(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    since = datetime.utcnow() - timedelta(hours=24)
+    signals = db.query(SignalDB).filter(SignalDB.created_at >= since).order_by(SignalDB.created_at.desc()).limit(20).all()
+    positions = db.query(BotPositionDB).all()
+
+    weather_text = ""
+    try:
+        wr = requests.get("https://wttr.in/London?format=j1", timeout=5)
+        wj = wr.json()
+        temp = wj["current_condition"][0]["temp_C"]
+        desc = wj["current_condition"][0]["weatherDesc"][0]["value"]
+        weather_text = f"London is currently {temp} degrees Celsius with {desc}."
+    except Exception:
+        pass
+
+    SEVERITY_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+    top_signals = sorted(signals, key=lambda s: SEVERITY_RANK.get(s.severity or "LOW", 0), reverse=True)[:3]
+
+    alerts_text = ""
+    for s in top_signals:
+        ents = ", ".join(s.entities or []) if s.entities else "global markets"
+        alerts_text += f"{s.severity} alert: {s.event_label} affecting {ents}. "
+
+    bot_text = (
+        f"Your virtual portfolio has {len(positions)} open position{'s' if len(positions) != 1 else ''}."
+        if positions else "No open bot positions at this time."
+    )
+
+    full_text = (
+        f"Intelligence briefing active. I am Thor, your GeoTrader AI agent. "
+        f"{weather_text} {alerts_text} {bot_text} Stay sharp and trade with precision."
+    )
+
+    return {
+        "text": full_text,
+        "weather": weather_text,
+        "signals": [
+            {"title": s.news_title, "severity": s.severity, "event": s.event_label, "entities": s.entities or []}
+            for s in top_signals
+        ],
+        "bot_positions": len(positions),
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+
+
+class ChatMessage(BaseModel):
+    message: str
+
+
+@app.post("/api/chat")
+def chat_with_ai(body: ChatMessage, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {"reply": "GeoTrader AI is not configured yet. Ask your administrator to set ANTHROPIC_API_KEY on the server."}
+
+    try:
+        import anthropic as ac
+        since = datetime.utcnow() - timedelta(hours=24)
+        sigs = db.query(SignalDB).filter(SignalDB.created_at >= since).order_by(SignalDB.created_at.desc()).limit(10).all()
+        positions = db.query(BotPositionDB).all()
+
+        ctx_lines = [
+            f"- [{s.severity}] {s.event_label} ({', '.join(s.entities or [])}): sentiment {s.sentiment:.2f}"
+            for s in sigs[:6]
+        ]
+        pos_lines = [f"- {p.asset_label} {p.direction} @ ${p.entry_price:.2f}" for p in positions]
+
+        system_prompt = (
+            "You are GeoTrader AI (call sign: Thor), an expert geopolitical trading intelligence assistant. "
+            "Help users understand how global events affect financial markets. "
+            "Be concise, data-driven, and actionable. Never give personal financial advice. "
+            "Always note that GeoTrader uses a virtual portfolio for simulation only.\n\n"
+            "Current 24h signals:\n" + ("\n".join(ctx_lines) or "None") + "\n\n"
+            "Open bot positions:\n" + ("\n".join(pos_lines) or "None")
+        )
+
+        client = ac.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
+            system=system_prompt,
+            messages=[{"role": "user", "content": body.message}],
+        )
+        return {"reply": msg.content[0].text}
+    except Exception as e:
+        logger.error("Chat error: %s", e)
+        raise HTTPException(status_code=500, detail="AI chat error")
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "time": datetime.utcnow().isoformat()}
