@@ -20,6 +20,7 @@ import WatchlistPage from "./pages/WatchlistPage";
 import WorldMapPage from "./pages/WorldMapPage";
 import SignalHistoryPage from "./pages/SignalHistoryPage";
 import ChatPage from "./pages/ChatPage";
+import SettingsPage from "./pages/SettingsPage";
 import { useSignals } from "./hooks/useSignals";
 import { usePrices } from "./hooks/usePrices";
 import type { Filters } from "./types";
@@ -32,7 +33,7 @@ const DEFAULT_FILTERS: Filters = {
   hours:            24,
 };
 
-type Page = "home" | "news" | "stocks" | "markets" | "portfolio" | "worldmap" | "watchlist" | "history" | "chat" | "admin" | "bot";
+type Page = "home" | "news" | "stocks" | "markets" | "portfolio" | "worldmap" | "watchlist" | "history" | "chat" | "settings" | "admin" | "bot";
 
 export default function App() {
   const path = window.location.pathname;
@@ -54,11 +55,12 @@ export default function App() {
   return <Dashboard onLogout={logout} user={user} />;
 }
 
-function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: string; is_admin: boolean } }) {
+function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: string; email: string; is_admin: boolean } }) {
   const [filters, setFilters]       = useState<Filters>(DEFAULT_FILTERS);
   const [showRegister, setShowRegister] = useState(false);
   const [activePage, setActivePage] = useState<Page>("home");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [displayName, setDisplayName] = useState(user.name);
 
   async function handleDeleteAccount() {
     const token = localStorage.getItem("token");
@@ -79,6 +81,7 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
     { id: "watchlist", label: "★ WATCHLIST" },
     { id: "history",   label: "◷ SIGNAL HISTORY" },
     { id: "chat",      label: "⚡ THOR AI" },
+    { id: "settings",  label: "⚙ SETTINGS" },
     { id: "bot",       label: "⚡ AI BOT", adminOnly: true },
     { id: "admin",     label: "⬡ ADMIN", adminOnly: true },
   ];
@@ -93,7 +96,7 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
           onRegister={() => setShowRegister(true)}
         />
         <div className="flex items-center gap-3 text-xs text-terminal-dim shrink-0">
-          <span>{user.name}</span>
+          <span>{displayName}</span>
           {showDeleteConfirm ? (
             <span className="flex items-center gap-2">
               <span className="text-red-400">Delete account?</span>
@@ -169,6 +172,10 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
       ) : activePage === "chat" ? (
         <div className="max-w-screen-2xl mx-auto">
           <ChatPage />
+        </div>
+      ) : activePage === "settings" ? (
+        <div className="max-w-screen-2xl mx-auto">
+          <SettingsPage userName={displayName} userEmail={user.email} onNameChange={setDisplayName} />
         </div>
       ) : activePage === "bot" ? (
         <div className="max-w-screen-2xl mx-auto">

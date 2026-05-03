@@ -499,6 +499,35 @@ def reset_password(request: Request, req: ResetPasswordRequest, db: Session = De
     return {"message": "Password updated successfully"}
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@app.post("/api/auth/change-password", status_code=200)
+def change_password(body: ChangePasswordRequest, current_user: UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    current_user.hashed_password = hash_password(body.new_password)
+    db.commit()
+    return {"message": "Password changed successfully"}
+
+
+class UpdateProfileRequest(BaseModel):
+    name: str
+
+
+@app.patch("/api/auth/profile", status_code=200)
+def update_profile(body: UpdateProfileRequest, current_user: UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+    current_user.name = body.name.strip()
+    db.commit()
+    return {"message": "Profile updated", "name": current_user.name}
+
+
 @app.delete("/api/auth/account", status_code=204)
 def delete_account(current_user: UserDB = Depends(get_current_user), db: Session = Depends(get_db)):
     db.query(PortfolioDB).filter_by(user_id=current_user.id).delete()
