@@ -805,7 +805,7 @@ export default function BotPage() {
             This is a <strong>virtual portfolio</strong>. No real money is used. All trades are simulated using live market data.
           </div>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
