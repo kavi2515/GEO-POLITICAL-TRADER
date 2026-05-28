@@ -203,8 +203,60 @@ export default function MarketsPage({ signals, onRefresh }: Props) {
         </div>
       </div>
 
-      {/* Market table */}
-      <div className="border border-terminal-border/30 rounded-lg overflow-hidden">
+      {/* Mobile card view */}
+      <div className="md:hidden space-y-2">
+        {filtered.length === 0 ? (
+          <div className="text-center py-12 text-terminal-dim text-sm">No assets found</div>
+        ) : filtered.map(asset => {
+          const price = prices[asset.asset];
+          const isBuy = asset.signal === "BUY";
+          const isSell = asset.signal === "SELL";
+          return (
+            <div key={asset.asset} onClick={() => handleRowClick(asset)}
+              className={`border rounded-lg p-3 cursor-pointer active:opacity-70 transition-opacity ${
+                isBuy ? "border-terminal-buy/20 bg-terminal-buy/5"
+                : isSell ? "border-terminal-sell/20 bg-terminal-sell/5"
+                : "border-terminal-border/30 bg-terminal-card/20"
+              }`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-terminal-text font-bold text-sm">{asset.asset_label}</span>
+                  <span className="text-terminal-dim text-xs ml-2">{asset.asset}</span>
+                </div>
+                {isBuy ? (
+                  <span className="flex items-center gap-1 text-terminal-buy font-bold border border-terminal-buy/30 bg-terminal-buy/10 px-2 py-0.5 rounded text-xs">
+                    <TrendingUp size={10} /> BUY {asset.confidence}%
+                  </span>
+                ) : isSell ? (
+                  <span className="flex items-center gap-1 text-terminal-sell font-bold border border-terminal-sell/30 bg-terminal-sell/10 px-2 py-0.5 rounded text-xs">
+                    <TrendingDown size={10} /> SELL {asset.confidence}%
+                  </span>
+                ) : (
+                  <span className="text-terminal-dim text-xs">NEUTRAL</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between mt-2">
+                <span className={`text-xs px-1.5 py-0.5 rounded border ${CATEGORY_COLOR[asset.category] ?? "text-terminal-dim border-terminal-border"}`}>
+                  {asset.category}
+                </span>
+                <div className="flex items-center gap-3 text-xs font-mono">
+                  {price ? (
+                    <>
+                      <span className="text-terminal-text font-bold">{price.formatted}</span>
+                      <span className={`font-bold ${price.change_pct >= 0 ? "text-terminal-buy" : "text-terminal-sell"}`}>
+                        {price.change_pct >= 0 ? "▲" : "▼"}{Math.abs(price.change_pct).toFixed(2)}%
+                      </span>
+                    </>
+                  ) : <span className="text-terminal-dim">No price</span>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop table view */}
+      <div className="hidden md:block border border-terminal-border/30 rounded-lg overflow-hidden">
         {/* Table header */}
         <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-terminal-accent/5 text-xs text-terminal-dim tracking-widest border-b border-terminal-border/30">
           <div className="col-span-3">ASSET</div>
@@ -231,7 +283,6 @@ export default function MarketsPage({ signals, onRefresh }: Props) {
                   isBuy ? "hover:bg-terminal-buy/5" : isSell ? "hover:bg-terminal-sell/5" : "hover:bg-terminal-muted/30"
                 }`}
               >
-                {/* Asset name */}
                 <div className="col-span-3 flex items-center gap-2">
                   <div>
                     <div className="text-terminal-text font-semibold group-hover:text-terminal-accent transition-colors">{asset.asset_label}</div>
@@ -239,35 +290,21 @@ export default function MarketsPage({ signals, onRefresh }: Props) {
                   </div>
                   <ChevronRight size={12} className="text-terminal-dim opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all ml-auto" />
                 </div>
-
-                {/* Category */}
                 <div className="col-span-2 flex items-center">
                   <span className={`text-xs px-1.5 py-0.5 rounded border ${CATEGORY_COLOR[asset.category] ?? "text-terminal-dim border-terminal-border"}`}>
                     {asset.category}
                   </span>
                 </div>
-
-                {/* Price */}
                 <div className="col-span-2 text-right font-mono">
-                  {price ? (
-                    <span className="text-terminal-text font-bold">{price.formatted}</span>
-                  ) : (
-                    <span className="text-terminal-dim">—</span>
-                  )}
+                  {price ? <span className="text-terminal-text font-bold">{price.formatted}</span> : <span className="text-terminal-dim">—</span>}
                 </div>
-
-                {/* 24h change */}
                 <div className="col-span-2 text-right font-mono">
                   {price ? (
                     <span className={`font-bold ${price.change_pct >= 0 ? "text-terminal-buy glow-buy" : "text-terminal-sell glow-sell"}`}>
                       {price.change_pct >= 0 ? "▲" : "▼"} {Math.abs(price.change_pct).toFixed(2)}%
                     </span>
-                  ) : (
-                    <span className="text-terminal-dim">—</span>
-                  )}
+                  ) : <span className="text-terminal-dim">—</span>}
                 </div>
-
-                {/* Signal */}
                 <div className="col-span-2 flex items-center justify-center">
                   {isBuy ? (
                     <span className="flex items-center gap-1 text-terminal-buy glow-buy font-bold border border-terminal-buy/30 bg-terminal-buy/10 px-2 py-0.5 rounded">
@@ -281,8 +318,6 @@ export default function MarketsPage({ signals, onRefresh }: Props) {
                     <span className="text-terminal-dim">NEUTRAL</span>
                   )}
                 </div>
-
-                {/* Confidence */}
                 <div className="col-span-1 text-right">
                   <span className={`font-mono font-bold ${isBuy ? "text-terminal-buy" : isSell ? "text-terminal-sell" : "text-terminal-dim"}`}>
                     {asset.confidence}%

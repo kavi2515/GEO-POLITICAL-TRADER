@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Menu, X } from "lucide-react";
 import CookieConsent from "./components/CookieConsent";
 import FilterPanel from "./components/FilterPanel";
 import Header from "./components/Header";
@@ -56,11 +57,17 @@ export default function App() {
 }
 
 function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: string; email: string; is_admin: boolean } }) {
-  const [filters, setFilters]       = useState<Filters>(DEFAULT_FILTERS);
+  const [filters, setFilters]         = useState<Filters>(DEFAULT_FILTERS);
   const [showRegister, setShowRegister] = useState(false);
-  const [activePage, setActivePage] = useState<Page>("home");
+  const [activePage, setActivePage]   = useState<Page>("home");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [displayName, setDisplayName] = useState(user.name);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  function navigate(page: Page) {
+    setActivePage(page);
+    setShowMobileMenu(false);
+  }
 
   async function handleDeleteAccount() {
     const token = localStorage.getItem("token");
@@ -88,14 +95,17 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
 
   return (
     <div className="min-h-screen bg-terminal-bg text-terminal-text font-mono">
-      <div className="flex items-center justify-between bg-terminal-bg border-b border-terminal-accent/20 px-4 py-1">
+
+      {/* Top bar */}
+      <div className="flex items-center justify-between bg-terminal-bg border-b border-terminal-accent/20 px-3 py-1">
         <Header
           newCount={newCount}
           loading={loading}
           onRefresh={refresh}
           onRegister={() => setShowRegister(true)}
         />
-        <div className="flex items-center gap-3 text-xs text-terminal-dim shrink-0">
+        {/* Desktop user controls */}
+        <div className="hidden md:flex items-center gap-3 text-xs text-terminal-dim shrink-0">
           <span>{displayName}</span>
           {showDeleteConfirm ? (
             <span className="flex items-center gap-2">
@@ -114,13 +124,70 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
             </>
           )}
         </div>
+        {/* Mobile hamburger */}
+        <button
+          onClick={() => setShowMobileMenu(true)}
+          className="md:hidden p-2 text-terminal-dim hover:text-terminal-accent transition-colors"
+        >
+          <Menu size={20} />
+        </button>
       </div>
+
+      {/* Mobile full-screen menu */}
+      {showMobileMenu && (
+        <div className="fixed inset-0 z-50 bg-terminal-bg flex flex-col">
+          {/* Menu header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-terminal-border">
+            <div>
+              <span className="text-terminal-accent font-bold text-base tracking-tight">GEO</span>
+              <span className="text-terminal-text font-light text-base tracking-tight">TRADER</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-terminal-dim text-xs">{displayName}</span>
+              <button onClick={() => setShowMobileMenu(false)} className="p-2 text-terminal-dim hover:text-terminal-accent">
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* Nav items */}
+          <div className="flex-1 overflow-y-auto py-2">
+            {tabs.map(tab => {
+              if (tab.adminOnly && !user.is_admin) return null;
+              const isActive = activePage === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => navigate(tab.id)}
+                  className={`w-full text-left px-6 py-4 text-sm font-bold tracking-widest border-b border-terminal-border/20 transition-colors ${
+                    isActive
+                      ? "text-terminal-accent bg-terminal-accent/10"
+                      : "text-terminal-dim hover:text-terminal-text hover:bg-terminal-card/30"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Mobile menu footer */}
+          <div className="border-t border-terminal-border p-4 space-y-2">
+            <button onClick={() => { navigate("settings"); }} className="w-full text-xs text-terminal-dim border border-terminal-border py-2.5 rounded transition-colors hover:text-terminal-accent">
+              ⚙ SETTINGS
+            </button>
+            <button onClick={onLogout} className="w-full text-xs text-red-400 border border-red-400/30 py-2.5 rounded transition-colors hover:bg-red-400/10 font-bold">
+              LOGOUT
+            </button>
+          </div>
+        </div>
+      )}
 
       <NewsTicker signals={signals} />
       <StatsBar stats={stats} />
 
-      {/* Page tabs */}
-      <div className="border-b border-terminal-border bg-terminal-card/50 overflow-x-auto">
+      {/* Desktop tab bar */}
+      <div className="hidden md:block border-b border-terminal-border bg-terminal-card/50 overflow-x-auto">
         <div className="max-w-screen-2xl mx-auto px-4 flex gap-1 min-w-max">
           {tabs.map(tab => {
             if (tab.adminOnly && !user.is_admin) return null;
@@ -143,6 +210,16 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
             );
           })}
         </div>
+      </div>
+
+      {/* Mobile: current page indicator */}
+      <div className="md:hidden flex items-center justify-between px-4 py-2 bg-terminal-card/30 border-b border-terminal-border/30">
+        <span className="text-terminal-accent text-xs font-bold tracking-widest">
+          {tabs.find(t => t.id === activePage)?.label ?? "HOME"}
+        </span>
+        <button onClick={() => setShowMobileMenu(true)} className="text-terminal-dim text-xs border border-terminal-border px-2 py-1 rounded">
+          MENU
+        </button>
       </div>
 
       {/* Page content */}
