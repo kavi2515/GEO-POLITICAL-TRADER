@@ -79,7 +79,7 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
   const { signals, stats, loading, newCount, refresh } = useSignals(filters);
   const { prices } = usePrices();
 
-  const tabs: { id: Page; label: string; adminOnly?: boolean }[] = [
+  const tabs: { id: Page; label: string; adminOnly?: boolean; proOrAdmin?: boolean }[] = [
     { id: "home",      label: "⌂ HOME" },
     { id: "news",      label: "◈ SIGNALS FEED" },
     { id: "stocks",    label: "▲ TRADE RECOMMENDATIONS" },
@@ -91,7 +91,7 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
     { id: "chat",      label: "⚡ THOR AI" },
     { id: "pricing",   label: user.is_pro ? "👑 PRO" : "⭐ UPGRADE" },
     { id: "settings",  label: "⚙ SETTINGS" },
-    { id: "bot",       label: "⚡ AI BOT", adminOnly: true },
+    { id: "bot",       label: "⚡ AI BOT", proOrAdmin: true },
     { id: "admin",     label: "⬡ ADMIN", adminOnly: true },
   ];
 
@@ -156,6 +156,7 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
           <div className="flex-1 overflow-y-auto py-2">
             {tabs.map(tab => {
               if (tab.adminOnly && !user.is_admin) return null;
+              if (tab.proOrAdmin && !user.is_pro && !user.is_admin) return null;
               const isActive = activePage === tab.id;
               return (
                 <button
