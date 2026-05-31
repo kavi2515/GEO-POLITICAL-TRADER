@@ -22,6 +22,7 @@ import WorldMapPage from "./pages/WorldMapPage";
 import SignalHistoryPage from "./pages/SignalHistoryPage";
 import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
+import PricingPage from "./pages/PricingPage";
 import { useSignals } from "./hooks/useSignals";
 import { usePrices } from "./hooks/usePrices";
 import type { Filters } from "./types";
@@ -34,7 +35,7 @@ const DEFAULT_FILTERS: Filters = {
   hours:            24,
 };
 
-type Page = "home" | "news" | "stocks" | "markets" | "portfolio" | "worldmap" | "watchlist" | "history" | "chat" | "settings" | "admin" | "bot";
+type Page = "home" | "news" | "stocks" | "markets" | "portfolio" | "worldmap" | "watchlist" | "history" | "chat" | "pricing" | "settings" | "admin" | "bot";
 
 export default function App() {
   const path = window.location.pathname;
@@ -56,7 +57,7 @@ export default function App() {
   return <Dashboard onLogout={logout} user={user} />;
 }
 
-function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: string; email: string; is_admin: boolean } }) {
+function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: string; email: string; is_admin: boolean; is_pro: boolean } }) {
   const [filters, setFilters]         = useState<Filters>(DEFAULT_FILTERS);
   const [showRegister, setShowRegister] = useState(false);
   const [activePage, setActivePage]   = useState<Page>("home");
@@ -88,6 +89,7 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
     { id: "watchlist", label: "★ WATCHLIST" },
     { id: "history",   label: "◷ SIGNAL HISTORY" },
     { id: "chat",      label: "⚡ THOR AI" },
+    { id: "pricing",   label: user.is_pro ? "👑 PRO" : "⭐ UPGRADE" },
     { id: "settings",  label: "⚙ SETTINGS" },
     { id: "bot",       label: "⚡ AI BOT", adminOnly: true },
     { id: "admin",     label: "⬡ ADMIN", adminOnly: true },
@@ -244,11 +246,15 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
         </div>
       ) : activePage === "history" ? (
         <div className="max-w-screen-2xl mx-auto">
-          <SignalHistoryPage />
+          {user.is_pro ? <SignalHistoryPage /> : <UpgradePrompt onUpgrade={() => setActivePage("pricing")} feature="Signal History & Accuracy Tracker" />}
         </div>
       ) : activePage === "chat" ? (
         <div className="max-w-screen-2xl mx-auto">
-          <ChatPage />
+          {user.is_pro ? <ChatPage /> : <UpgradePrompt onUpgrade={() => setActivePage("pricing")} feature="Thor AI Chat" />}
+        </div>
+      ) : activePage === "pricing" ? (
+        <div className="max-w-screen-2xl mx-auto">
+          <PricingPage isPro={user.is_pro} />
         </div>
       ) : activePage === "settings" ? (
         <div className="max-w-screen-2xl mx-auto">
@@ -339,6 +345,27 @@ function EmptyState({ onRefresh }: { onRefresh: () => void }) {
       >
         Fetch Latest News
       </button>
+    </div>
+  );
+}
+
+function UpgradePrompt({ feature, onUpgrade }: { feature: string; onUpgrade: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-64 gap-5 text-center p-6">
+      <div className="w-16 h-16 rounded-full bg-yellow-400/10 border border-yellow-400/30 flex items-center justify-center text-3xl">
+        👑
+      </div>
+      <div>
+        <p className="text-terminal-text font-bold text-base">{feature} is a Pro feature</p>
+        <p className="text-terminal-dim text-sm mt-1">Upgrade to GeoTrader Pro for $19/month to unlock this and more.</p>
+      </div>
+      <button
+        onClick={onUpgrade}
+        className="text-sm text-terminal-bg bg-terminal-accent hover:bg-terminal-accent/80 px-6 py-2.5 rounded-lg font-bold transition-colors"
+      >
+        Upgrade to Pro — $19/mo
+      </button>
+      <p className="text-terminal-dim/50 text-xs">Cancel anytime · Instant access · Powered by Stripe</p>
     </div>
   );
 }

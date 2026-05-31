@@ -89,6 +89,9 @@ class UserDB(Base):
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
+    is_pro = Column(Boolean, default=False)
+    stripe_customer_id = Column(String, nullable=True)
+    stripe_subscription_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

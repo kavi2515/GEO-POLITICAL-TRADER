@@ -357,6 +357,7 @@ class UserResponse(BaseModel):
     email: str
     name: str
     is_admin: bool = False
+    is_pro: bool = False
 
 
 class PortfolioAddRequest(BaseModel):
@@ -436,7 +437,7 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
 
 @app.get("/api/auth/me", response_model=UserResponse)
 def me(current_user: UserDB = Depends(get_current_user)):
-    return UserResponse(id=current_user.id, email=current_user.email, name=current_user.name, is_admin=current_user.is_admin)
+    return UserResponse(id=current_user.id, email=current_user.email, name=current_user.name, is_admin=current_user.is_admin, is_pro=current_user.is_pro or False)
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -1337,6 +1338,102 @@ def get_prices(current_user: UserDB = Depends(get_current_user)):
     except Exception as e:
         logger.error("Price fetch error: %s", e)
         return {}
+
+
+STRIPE_SECRET_KEY   = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_PRICE_ID     = os.environ.get("STRIPE_PRICE_ID", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+APP_URL             = os.environ.get("APP_URL", "https://geotrader.io")
+
+
+@app.post("/api/payments/checkout")
+def create_checkout(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    if not STRIPE_SECRET_KEY or not STRIPE_PRICE_ID:
+        raise HTTPException(status_code=503, detail="Payments not configured")
+    import stripe as st
+    st.api_key = STRIPE_SECRET_KEY
+    session = st.checkout.Session.create(
+        customer_email=current_user.email,
+        payment_method_types=["card"],
+        line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
+        mode="subscription",
+        success_url=f"{APP_URL}/?pro=success",
+        cancel_url=f"{APP_URL}/?pro=cancel",
+        metadata={"user_id": current_user.id},
+    )
+    return {"url": session.url}
+
+
+@app.post("/api/payments/portal")
+def billing_portal(db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Payments not configured")
+    if not current_user.stripe_customer_id:
+        raise HTTPException(status_code=400, detail="No subscription found")
+    import stripe as st
+    st.api_key = STRIPE_SECRET_KEY
+    session = st.billing_portal.Session.create(
+        customer=current_user.stripe_customer_id,
+        return_url=f"{APP_URL}/",
+    )
+    return {"url": session.url}
+
+
+@app.get("/api/payments/status")
+def payment_status(current_user: UserDB = Depends(get_current_user)):
+    return {"is_pro": current_user.is_pro or False, "customer_id": current_user.stripe_customer_id}
+
+
+@app.post("/api/payments/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    import stripe as st
+    st.api_key = STRIPE_SECRET_KEY
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+
+    try:
+        if STRIPE_WEBHOOK_SECRET:
+            event = st.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+        else:
+            event = st.Event.construct_from(json.loads(payload), st.api_key)
+    except Exception as e:
+        logger.error("Webhook error: %s", e)
+        raise HTTPException(status_code=400, detail="Webhook error")
+
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        user_id = session.get("metadata", {}).get("user_id")
+        customer_id = session.get("customer")
+        sub_id = session.get("subscription")
+        if user_id:
+            user = db.query(UserDB).filter_by(id=user_id).first()
+            if user:
+                user.is_pro = True
+                user.stripe_customer_id = customer_id
+                user.stripe_subscription_id = sub_id
+                db.commit()
+                logger.info("Upgraded user %s to Pro", user.email)
+
+    elif event["type"] in ("customer.subscription.deleted", "customer.subscription.paused"):
+        sub = event["data"]["object"]
+        customer_id = sub.get("customer")
+        user = db.query(UserDB).filter_by(stripe_customer_id=customer_id).first()
+        if user:
+            user.is_pro = False
+            user.stripe_subscription_id = None
+            db.commit()
+            logger.info("Downgraded user %s to Free", user.email)
+
+    elif event["type"] == "invoice.payment_failed":
+        invoice = event["data"]["object"]
+        customer_id = invoice.get("customer")
+        user = db.query(UserDB).filter_by(stripe_customer_id=customer_id).first()
+        if user:
+            user.is_pro = False
+            db.commit()
+            logger.info("Payment failed — downgraded %s to Free", user.email)
+
+    return {"received": True}
 
 
 @app.get("/api/briefing/today")
