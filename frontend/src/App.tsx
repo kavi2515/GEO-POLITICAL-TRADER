@@ -59,6 +59,7 @@ export default function App() {
   if (!user && !showAuth) return <LandingPage onGetStarted={() => setShowAuth(true)} />;
   if (!user && showAuth) return <AuthPage />;
 
+  if (!user) return null;
   return <Dashboard onLogout={logout} user={user} />;
 }
 
