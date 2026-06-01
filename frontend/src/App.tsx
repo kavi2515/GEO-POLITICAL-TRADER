@@ -23,6 +23,8 @@ import SignalHistoryPage from "./pages/SignalHistoryPage";
 import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import PricingPage from "./pages/PricingPage";
+import LandingPage from "./pages/LandingPage";
+import OnboardingModal from "./components/OnboardingModal";
 import { useSignals } from "./hooks/useSignals";
 import { usePrices } from "./hooks/usePrices";
 import type { Filters } from "./types";
@@ -43,6 +45,7 @@ export default function App() {
   if (path === "/privacy") return <PrivacyPage />;
 
   const { user, loading: authLoading, logout } = useAuth();
+  const [showAuth, setShowAuth] = useState(false);
 
   if (authLoading) {
     return (
@@ -52,7 +55,9 @@ export default function App() {
     );
   }
 
-  if (!user || path === "/reset-password") return <AuthPage />;
+  if (path === "/reset-password") return <AuthPage />;
+  if (!user && !showAuth) return <LandingPage onGetStarted={() => setShowAuth(true)} />;
+  if (!user && showAuth) return <AuthPage />;
 
   return <Dashboard onLogout={logout} user={user} />;
 }
@@ -64,6 +69,9 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [displayName, setDisplayName] = useState(user.name);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => !localStorage.getItem("geotrader_onboarded")
+  );
 
   function navigate(page: Page) {
     setActivePage(page);
@@ -304,6 +312,7 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
       )}
 
       {showRegister && <RegisterModal onClose={() => setShowRegister(false)} />}
+      {showOnboarding && <OnboardingModal onClose={() => setShowOnboarding(false)} />}
       <CookieConsent />
 
       {/* Footer */}

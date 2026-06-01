@@ -142,15 +142,16 @@ async def process_news(db: Session) -> int:
     ).all()
     if critical_unsent:
         subscribers = db.query(SubscriberDB).filter_by(active=True).all()
+        pro_users = db.query(UserDB).filter_by(is_pro=True, is_active=True).all()
         for sig in critical_unsent:
-            send_email_alert(sig, subscribers)
+            send_email_alert(sig, subscribers, pro_users)
             sig.emailed = True
         db.commit()
 
     return new_signals
 
 
-def send_email_alert(signal: SignalDB, subscribers: list):
+def send_email_alert(signal: SignalDB, subscribers: list, pro_users: list = []):
     smtp_host = os.environ.get("SMTP_HOST", "")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     smtp_user = os.environ.get("SMTP_USER", "")
@@ -160,9 +161,19 @@ def send_email_alert(signal: SignalDB, subscribers: list):
     if not smtp_host or not smtp_user or not smtp_pass:
         return
 
-    subject = f"⚠️ CRITICAL ALERT: {signal.event_label} — {signal.news_title[:60]}"
+    subject = f"⚡ GEOTRADER ALERT: {signal.event_label} [{signal.severity}]"
 
-    for sub in subscribers:
+    # Combine subscriber emails + Pro user emails (deduplicated)
+    all_emails = {sub.email: getattr(sub, "name", "") for sub in subscribers}
+    for u in pro_users:
+        if u.email not in all_emails:
+            all_emails[u.email] = u.name
+
+    class _Rec:
+        def __init__(self, email, name): self.email = email; self.name = name
+    all_recipients = [_Rec(e, n) for e, n in all_emails.items()]
+
+    for sub in all_recipients:
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
