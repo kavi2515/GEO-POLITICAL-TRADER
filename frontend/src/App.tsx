@@ -319,7 +319,7 @@ function Dashboard({ onLogout, user }: { onLogout: () => void; user: { name: str
       {/* Footer */}
       <footer className="border-t border-terminal-border/30 mt-8 py-4 px-6 space-y-2 text-xs text-terminal-dim">
         <p className="text-terminal-dim/70 leading-relaxed text-center max-w-3xl mx-auto">
-          <span className="text-yellow-400/80 font-bold">DISCLAIMER:</span> GeoTrader provides algorithmic market signals for informational purposes only. Nothing on this platform constitutes financial advice or a recommendation to buy or sell any financial instrument. Trading involves significant risk of loss. Always consult a qualified financial adviser before making investment decisions.
+          <span className="text-yellow-400/80 font-bold">IMPORTANT DISCLAIMER:</span> GeoTrader is NOT registered with the SEC, FINRA, CFTC, FCA, or any financial regulatory authority. GeoTrader is not a registered investment adviser, broker-dealer, or commodity trading adviser. All signals are algorithmic outputs for informational and educational purposes only — nothing on this platform constitutes financial advice, investment advice, or a recommendation to buy or sell any security, commodity, currency, or cryptocurrency. The virtual portfolio is for simulation only — no real money is used. Trading involves significant risk of loss. Always consult a qualified, regulated financial adviser before making investment decisions.
         </p>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span>© {new Date().getFullYear()} <span className="text-terminal-accent">GeoTrader</span> — Kavi Godithi. All Rights Reserved.</span>

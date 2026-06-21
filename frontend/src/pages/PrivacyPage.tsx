@@ -5,7 +5,7 @@ export default function PrivacyPage() {
         <div>
           <a href="/" className="text-terminal-accent text-xs tracking-widest hover:underline">← BACK TO GEOTRADER</a>
           <h1 className="text-terminal-accent text-xl font-bold tracking-widest mt-4">PRIVACY POLICY</h1>
-          <p className="text-terminal-dim text-xs mt-1">Last updated: March 2026 · © Kavi Godithi. All Rights Reserved.</p>
+          <p className="text-terminal-dim text-xs mt-1">Last updated: June 2026 · © Kavi Godithi. All Rights Reserved.</p>
         </div>
 
         <Section title="1. Who We Are">
@@ -52,8 +52,12 @@ export default function PrivacyPage() {
           We may update this policy periodically. Material changes will be communicated via email or a notice on the Platform. Continued use after changes constitutes acceptance.
         </Section>
 
-        <Section title="12. Complaints">
-          If you are unhappy with how we handle your data, you have the right to lodge a complaint with the UK Information Commissioner's Office (ICO) at <a href="https://ico.org.uk" target="_blank" rel="noopener noreferrer" className="text-terminal-accent hover:underline">ico.org.uk</a>.
+        <Section title="12. California Privacy Rights (CCPA)">
+          If you are a California resident, the California Consumer Privacy Act (CCPA) grants you the following rights: (a) <strong>Right to Know</strong> — you may request disclosure of the categories and specific pieces of personal information we have collected about you; (b) <strong>Right to Delete</strong> — you may request deletion of your personal information, subject to certain exceptions; (c) <strong>Right to Opt-Out</strong> — GeoTrader does NOT sell personal information to third parties. You therefore have no need to opt out of data sales; (d) <strong>Right to Non-Discrimination</strong> — we will not discriminate against you for exercising your CCPA rights. To submit a CCPA request, email <a href="mailto:gourinathgodithi@gmail.com" className="text-terminal-accent hover:underline">gourinathgodithi@gmail.com</a> with the subject line "CCPA Request". We will respond within 45 days.
+        </Section>
+
+        <Section title="13. Complaints">
+          If you are unhappy with how we handle your data, you have the right to lodge a complaint with the UK Information Commissioner's Office (ICO) at <a href="https://ico.org.uk" target="_blank" rel="noopener noreferrer" className="text-terminal-accent hover:underline">ico.org.uk</a>. U.S. residents may contact the Federal Trade Commission (FTC) at <a href="https://ftc.gov" target="_blank" rel="noopener noreferrer" className="text-terminal-accent hover:underline">ftc.gov</a>.
         </Section>
       </div>
     </div>
